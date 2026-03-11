@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+from app.core.config import BILLING_ECS_WEIGHT
 from app.core.config import ADMIN_STATE_PATH, GENERATED_REPORTS_DIR
 from app.models.schemas import (
     AdminState,
@@ -419,9 +420,10 @@ def update_ecs_readings_and_allocate(
         )
 
     normalized_total = max(total_amount, 0.0)
+    ecs_component_total = normalized_total * BILLING_ECS_WEIGHT
     for index, allocation in enumerate(allocations):
         share_percent = 0.0 if total_consumption_m3 == 0 else (allocation.delta_m3 / total_consumption_m3) * 100.0
-        allocated_amount = 0.0 if total_consumption_m3 == 0 else (allocation.delta_m3 / total_consumption_m3) * normalized_total
+        allocated_amount = 0.0 if total_consumption_m3 == 0 else (allocation.delta_m3 / total_consumption_m3) * ecs_component_total
         allocations[index] = allocation.model_copy(
             update={
                 "share_percent": round(share_percent, 2),

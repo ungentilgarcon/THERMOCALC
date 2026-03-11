@@ -41,11 +41,19 @@ from app.services.admin_state import (
     update_schedule,
 )
 from app.services.auth import ensure_admin, is_admin_authenticated, login_admin, logout_admin
+from app.services.billing import build_combined_allocation_rows
 from app.services.consumption import build_monthly_allocation
 from app.services.reporting import build_monthly_pdf
 from app.services.runtime_measurements import build_realtime_payload, build_trv26_telemetry
 from app.services.scheduler import run_scheduled_generation_once
-from app.services.test_scenarios import build_empty_payload, build_rows, build_test_payload, list_test_scenarios
+from app.services.test_scenarios import (
+    build_ecs_rows,
+    build_empty_payload,
+    build_rows,
+    build_test_ecs_allocation,
+    build_test_payload,
+    list_test_scenarios,
+)
 from app.services.zigbee import (
     build_zigbee_overview,
     list_device_role_options,
@@ -106,6 +114,11 @@ def ecs_redirect(notice: str) -> RedirectResponse:
 def test_calculations_redirect(notice: str = "") -> RedirectResponse:
     suffix = f"?notice={quote_plus(notice)}" if notice else ""
     return RedirectResponse(url=f"/test-calculs{suffix}", status_code=303)
+
+
+def test_consumption_redirect(notice: str = "") -> RedirectResponse:
+    suffix = f"?notice={quote_plus(notice)}" if notice else ""
+    return RedirectResponse(url=f"/test-consommation{suffix}", status_code=303)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -219,6 +232,42 @@ def test_calculations_page(
             "month_label": payload.month_label,
             "row_count": len(payload.samples),
             "report": None,
+        },
+    )
+
+
+@router.get("/test-consommation", response_class=HTMLResponse)
+def test_consumption_page(
+    request: Request,
+    notice: str = "",
+    scenario: str = Query(default="balanced"),
+    rows: int = Query(default=4),
+) -> Response:
+    if not is_admin_authenticated(request):
+        return admin_login_redirect()
+    available_scenarios = list_test_scenarios()
+    scenario_keys = {item["key"] for item in available_scenarios}
+    selected_scenario = scenario if scenario in scenario_keys or scenario == "manual" else "balanced"
+    if selected_scenario == "manual":
+        payload = build_empty_payload(rows)
+    else:
+        payload = build_test_payload(selected_scenario)
+    return templates.TemplateResponse(
+        request=request,
+        name="test_consommation.html",
+        context={
+            "notice": notice,
+            "selected_scenario": selected_scenario,
+            "scenario_options": available_scenarios,
+            "rows": build_rows(payload),
+            "ecs_rows": build_ecs_rows(payload, scenario_key=selected_scenario),
+            "month_label": payload.month_label,
+            "row_count": len(payload.samples),
+            "total_bill_amount": 180.0,
+            "bill_amount_label": "EUR",
+            "report": None,
+            "ecs_allocation": None,
+            "combined_rows": None,
         },
     )
 
@@ -618,6 +667,118 @@ async def run_test_calculations(request: Request) -> Response:
             "month_label": payload.month_label,
             "row_count": len(payload.samples),
             "report": report,
+        },
+    )
+
+
+@router.post("/test-consommation")
+async def run_test_consumption(request: Request) -> Response:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    form = await request.form()
+    month_label = str(form.get("month_label", "Scenario consommation")).strip() or "Scenario consommation"
+    scenario = str(form.get("scenario", "manual")).strip() or "manual"
+    trv_ids = form.getlist("trv_id")
+    zone_labels = form.getlist("zone_label")
+    owner_names = form.getlist("owner_name")
+    surface_values = form.getlist("surface_m2")
+    target_values = form.getlist("target_temperature_c")
+    current_values = form.getlist("current_temperature_c")
+    valve_values = form.getlist("valve_open_percent")
+    running_states = form.getlist("running_state")
+    duty_values = form.getlist("duty_cycle_percent")
+    ecs_owner_names = form.getlist("ecs_owner_name")
+    ecs_delta_values = form.getlist("ecs_delta_m3")
+
+    samples = []
+    row_total = max(
+        len(trv_ids),
+        len(zone_labels),
+        len(owner_names),
+        len(surface_values),
+        len(target_values),
+        len(current_values),
+        len(valve_values),
+        len(running_states),
+        len(duty_values),
+    )
+    for index in range(row_total):
+        trv_id = str(trv_ids[index] if index < len(trv_ids) else "").strip()
+        zone_label = str(zone_labels[index] if index < len(zone_labels) else "").strip()
+        owner_name = str(owner_names[index] if index < len(owner_names) else "").strip()
+        if not any([trv_id, zone_label, owner_name]):
+            continue
+        try:
+            surface_m2 = float(surface_values[index])
+            target_temperature_c = float(target_values[index])
+            current_temperature_c = float(current_values[index])
+            valve_open_percent = float(valve_values[index])
+            duty_value = str(duty_values[index] if index < len(duty_values) else "").strip()
+            duty_cycle_percent = float(duty_value) if duty_value else None
+        except (TypeError, ValueError):
+            return test_consumption_redirect("Valeurs numeriques invalides dans le scenario de consommation")
+        samples.append(
+            {
+                "trv_id": trv_id or f"scenario-{index + 1}",
+                "zone_label": zone_label or f"Zone {index + 1}",
+                "owner_name": owner_name or f"Occupant {index + 1}",
+                "surface_m2": surface_m2,
+                "target_temperature_c": target_temperature_c,
+                "current_temperature_c": current_temperature_c,
+                "valve_open_percent": valve_open_percent,
+                "running_state": str(running_states[index] if index < len(running_states) else "unknown").strip(),
+                "duty_cycle_percent": duty_cycle_percent,
+                "captured_at": "2026-03-11T08:00:00Z",
+            }
+        )
+    if not samples:
+        return test_consumption_redirect("Ajoute au moins une ligne de chauffe pour lancer le test de consommation")
+
+    ecs_owner_deltas: dict[str, float] = {}
+    for index, owner_name in enumerate(ecs_owner_names):
+        normalized_owner_name = str(owner_name).strip()
+        if not normalized_owner_name:
+            continue
+        try:
+            ecs_delta = float(ecs_delta_values[index]) if index < len(ecs_delta_values) else 0.0
+        except (TypeError, ValueError):
+            return test_consumption_redirect("Valeurs ECS invalides dans le scenario de consommation")
+        ecs_owner_deltas[normalized_owner_name] = ecs_delta
+
+    try:
+        total_bill_amount = float(str(form.get("total_bill_amount", "0")).strip() or "0")
+    except ValueError:
+        return test_consumption_redirect("Montant total combustible invalide")
+    bill_amount_label = str(form.get("bill_amount_label", "EUR")).strip() or "EUR"
+
+    payload = AllocationInput.model_validate({"month_label": month_label, "samples": samples})
+    report = build_monthly_allocation(payload)
+    ecs_allocation = build_test_ecs_allocation(
+        owner_deltas_m3=ecs_owner_deltas,
+        total_amount=total_bill_amount,
+        amount_label=bill_amount_label,
+        period_label=month_label,
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="test_consommation.html",
+        context={
+            "notice": "Scenario de consommation calcule en mode test. Aucun etat persistant n'a ete modifie.",
+            "selected_scenario": scenario,
+            "scenario_options": list_test_scenarios(),
+            "rows": build_rows(payload),
+            "ecs_rows": [
+                {"owner_name": owner_name, "ecs_delta_m3": ecs_owner_deltas[owner_name]}
+                for owner_name in sorted(ecs_owner_deltas)
+            ],
+            "month_label": payload.month_label,
+            "row_count": len(payload.samples),
+            "total_bill_amount": total_bill_amount,
+            "bill_amount_label": bill_amount_label,
+            "report": report,
+            "ecs_allocation": ecs_allocation,
+            "combined_rows": build_combined_allocation_rows(report, ecs_allocation=ecs_allocation),
         },
     )
 

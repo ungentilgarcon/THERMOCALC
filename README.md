@@ -32,6 +32,7 @@ Sur un mois, on somme l'effort de toutes les tetes d'une personne, puis on norma
 - page web de suivi mensuel
 - ecran d'administration pour gerer occupants, tetes et surfaces
 - page de test de calculs pour rejouer des scenarios de chauffe via une interface dediee
+- page de test de consommation pour simuler chauffage plus ECS par occupant
 - generation de rapport PDF mensuel
 - planification mensuelle automatique de generation PDF
 - authentification simple par session sur l'administration
@@ -53,6 +54,18 @@ Une documentation detaillee est disponible dans `docs/`:
 - `docs/ARCHITECTURE.md` : architecture applicative et flux de donnees
 - `docs/EXPLOITATION.md` : installation, configuration et exploitation
 - `docs/TEST_CALCULS.md` : mode de simulation de scenarios de chauffe
+
+## Test De Consommation
+
+La page `/test-consommation` etend le mode test de chauffe avec une saisie ECS par occupant.
+
+Elle permet de:
+
+- charger un scenario de chauffe predefini ou manuel
+- saisir un volume ECS de test par occupant
+- definir une facture combustible totale et son libelle
+- visualiser la synthese combinee chauffage plus ECS sans rien enregistrer en base JSON
+- repartir cette facture via une ponderation configurable entre part chauffage et part ECS
 
 ## Demarrage
 
@@ -78,6 +91,7 @@ Le fichier couvre notamment:
 
 - les identifiants admin
 - le secret de session
+- la ponderation de facture entre chauffage et ECS
 - le stockage local des dernieres mesures TRV
 - l'activation du mode temps reel MQTT et la fenetre de fraicheur des mesures
 - la fenetre de calcul du duty cycle TRV26 et la retention d'historique
@@ -105,6 +119,10 @@ sample_fallback_enabled = true
 realtime_measurement_max_age_minutes = 180
 trv26_duty_cycle_window_hours = 24
 trv26_history_retention_hours = 72
+
+[billing]
+heating_weight = 0.5
+ecs_weight = 0.5
 
 [alerts]
 low_battery_threshold_percent = 10
@@ -192,6 +210,13 @@ Il applique ensuite une ponderation simple:
 - $effort = \Delta \times surface \times f_{demande}$
 
 Les scores par tete sont agreges par occupant puis normalises en pourcentage mensuel.
+
+Quand une facture combustible totale doit etre repartie, ThermoCalc combine ensuite:
+
+- la part chauffage de chaque occupant
+- la part ECS de chaque occupant
+
+Par defaut, les deux composantes sont ponderees a 50/50 via `billing.heating_weight` et `billing.ecs_weight` dans `thermocalc.config.toml`.
 
 Cette formule garde la vanne comme signal principal, mais elle corrige le calcul avec:
 

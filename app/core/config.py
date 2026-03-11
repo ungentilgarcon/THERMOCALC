@@ -23,6 +23,15 @@ def _read(config: dict, *keys: str, default=None):
 	return current
 
 
+def _normalized_weights(heating_weight: float, ecs_weight: float) -> tuple[float, float]:
+	positive_heating = max(heating_weight, 0.0)
+	positive_ecs = max(ecs_weight, 0.0)
+	total = positive_heating + positive_ecs
+	if total <= 0:
+		return 0.5, 0.5
+	return positive_heating / total, positive_ecs / total
+
+
 ROOT_CONFIG = _load_root_config()
 
 RUNTIME_MEASUREMENTS_PATH = BASE_DIR / "data" / _read(ROOT_CONFIG, "app", "runtime_measurements_path", default="runtime_measurements.json")
@@ -55,3 +64,6 @@ SMTP_PORT = int(_read(ROOT_CONFIG, "smtp", "port", default=587))
 SMTP_USERNAME = str(_read(ROOT_CONFIG, "smtp", "username", default=""))
 SMTP_PASSWORD = str(_read(ROOT_CONFIG, "smtp", "password", default=""))
 SMTP_USE_TLS = bool(_read(ROOT_CONFIG, "smtp", "use_tls", default=True))
+_RAW_BILLING_HEATING_WEIGHT = float(_read(ROOT_CONFIG, "billing", "heating_weight", default=0.5))
+_RAW_BILLING_ECS_WEIGHT = float(_read(ROOT_CONFIG, "billing", "ecs_weight", default=0.5))
+BILLING_HEATING_WEIGHT, BILLING_ECS_WEIGHT = _normalized_weights(_RAW_BILLING_HEATING_WEIGHT, _RAW_BILLING_ECS_WEIGHT)

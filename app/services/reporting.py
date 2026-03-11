@@ -7,6 +7,7 @@ from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 from app.models.schemas import EcsAllocationRun, MonthlyAllocationReport
 from app.services.archives import upsert_archive_record
+from app.services.billing import build_combined_allocation_rows
 
 
 def build_monthly_pdf(report: MonthlyAllocationReport, ecs_allocation: EcsAllocationRun | None = None) -> bytes:
@@ -26,7 +27,7 @@ def build_monthly_pdf(report: MonthlyAllocationReport, ecs_allocation: EcsAlloca
         pdf.drawString(
             2 * cm,
             height - 4.5 * cm,
-            f"ECS: {ecs_allocation.total_amount:.2f} {ecs_allocation.amount_label} repartis pour {ecs_period}.",
+            f"Facture combustible: {ecs_allocation.total_amount:.2f} {ecs_allocation.amount_label} repartie pour {ecs_period}.",
         )
 
     y = height - 5.2 * cm
@@ -36,19 +37,21 @@ def build_monthly_pdf(report: MonthlyAllocationReport, ecs_allocation: EcsAlloca
     pdf.setFont("Helvetica-Bold", 11)
     combined_rows = build_combined_allocation_rows(report, ecs_allocation=ecs_allocation)
     pdf.drawString(2.2 * cm, y + 0.23 * cm, "Occupant")
-    pdf.drawString(7.0 * cm, y + 0.23 * cm, "Chauff.")
-    pdf.drawString(10.0 * cm, y + 0.23 * cm, "ECS")
-    pdf.drawString(12.6 * cm, y + 0.23 * cm, "Montant ECS")
-    pdf.drawString(16.2 * cm, y + 0.23 * cm, "Surface")
+    pdf.drawString(6.7 * cm, y + 0.23 * cm, "Chauff.")
+    pdf.drawString(9.2 * cm, y + 0.23 * cm, "ECS")
+    pdf.drawString(11.6 * cm, y + 0.23 * cm, "Part finale")
+    pdf.drawString(14.5 * cm, y + 0.23 * cm, "Montant")
+    pdf.drawString(17.0 * cm, y + 0.23 * cm, "Surf.")
 
     y -= 0.7 * cm
     pdf.setFillColor(colors.black)
     pdf.setFont("Helvetica", 10)
     for row in combined_rows:
         pdf.drawString(2.2 * cm, y + 0.2 * cm, str(row["owner_name"]))
-        pdf.drawRightString(9.0 * cm, y + 0.2 * cm, f"{float(row['heating_share_percent']):.2f} %")
-        pdf.drawRightString(11.6 * cm, y + 0.2 * cm, f"{float(row['ecs_share_percent']):.2f} %")
-        pdf.drawRightString(15.8 * cm, y + 0.2 * cm, f"{float(row['ecs_allocated_amount']):.2f}")
+        pdf.drawRightString(8.8 * cm, y + 0.2 * cm, f"{float(row['heating_share_percent']):.2f} %")
+        pdf.drawRightString(11.2 * cm, y + 0.2 * cm, f"{float(row['ecs_share_percent']):.2f} %")
+        pdf.drawRightString(14.2 * cm, y + 0.2 * cm, f"{float(row['combined_share_percent']):.2f} %")
+        pdf.drawRightString(16.8 * cm, y + 0.2 * cm, f"{float(row['combined_allocated_amount']):.2f}")
         pdf.drawRightString(17.6 * cm, y + 0.2 * cm, f"{float(row['tracked_surface_m2']):.1f} m2")
         y -= 0.65 * cm
 
@@ -71,33 +74,6 @@ def build_monthly_pdf(report: MonthlyAllocationReport, ecs_allocation: EcsAlloca
 
     pdf.save()
     return buffer.getvalue()
-
-
-def build_combined_allocation_rows(report: MonthlyAllocationReport, ecs_allocation: EcsAllocationRun | None = None) -> list[dict[str, object]]:
-    heating_index = {allocation.owner_name.lower(): allocation for allocation in report.allocations}
-    ecs_index = {}
-    if ecs_allocation is not None:
-        ecs_index = {item.owner_name.lower(): item for item in ecs_allocation.allocations}
-
-    owner_names = sorted(set(heating_index) | set(ecs_index))
-    rows: list[dict[str, object]] = []
-    for owner_name in owner_names:
-        allocation = heating_index.get(owner_name)
-        ecs_line = ecs_index.get(owner_name)
-        display_name = allocation.owner_name if allocation is not None else ecs_line.owner_name
-        rows.append(
-            {
-                "owner_name": display_name,
-                "heating_share_percent": (allocation.share_percent if allocation else 0.0),
-                "heating_score": (allocation.total_effort_score if allocation else 0.0),
-                "tracked_surface_m2": (allocation.tracked_surface_m2 if allocation else 0.0),
-                "ecs_share_percent": (ecs_line.share_percent if ecs_line else 0.0),
-                "ecs_allocated_amount": (ecs_line.allocated_amount if ecs_line else 0.0),
-                "ecs_delta_m3": (ecs_line.delta_m3 if ecs_line else 0.0),
-            }
-        )
-    return rows
-
 def _new_page(pdf: canvas.Canvas, height: float) -> float:
     pdf.showPage()
     pdf.setFont("Helvetica", 9)

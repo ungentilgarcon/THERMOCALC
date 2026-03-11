@@ -4,6 +4,8 @@
 
 La page `/test-calculs` permet de verifier le comportement du moteur de repartition chauffage sur des cas controles.
 
+La page `/test-consommation` reprend le meme principe mais ajoute une saisie ECS par occupant pour valider une synthese de consommation complete.
+
 Elle sert a:
 
 - rejouer des situations typiques sans attendre des mesures reelles
@@ -17,6 +19,8 @@ Elle sert a:
 - calcule instantanement un rapport complet chauffage
 - affiche la repartition finale par occupant
 - affiche le detail zone par zone
+- peut aussi simuler des volumes ECS et leur allocation financiere par occupant
+- peut aussi simuler une facture combustible totale, puis la combiner avec les parts chauffage et ECS
 
 ## Ce que le mode test ne fait pas
 
@@ -46,6 +50,16 @@ Cas avec retour de chauffe apres reduction nocturne, utile pour valider les delt
 3. Ajuster les lignes: occupant, zone, surface, consigne, temperature observee, vanne, `running_state`, duty cycle.
 4. Executer le calcul.
 5. Lire les parts finales et les scores detaillees.
+
+Pour tester la consommation complete:
+
+1. Ouvrir `/test-consommation`.
+2. Charger un scenario de chauffe.
+3. Saisir un volume ECS de test par occupant.
+4. Saisir la facture combustible totale.
+5. Executer le calcul et lire la synthese chauffage plus ECS.
+
+Par defaut, ThermoCalc applique une ponderation 50/50 entre chauffage et ECS pour convertir la facture combustible totale en montant final par occupant. Cette ponderation est configurable dans `thermocalc.config.toml`.
 
 ## Interprétation rapide
 

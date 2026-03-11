@@ -96,19 +96,28 @@ Principes:
 
 - le premier releve initialise les indexes
 - les releves suivants calculent un delta par occupant
-- le montant total est reparti proportionnellement au delta
+- la facture combustible totale est transformee en composante ECS proportionnelle au delta
 - l'historique conserve plusieurs calculs consecutifs
+- la synthese finale par occupant se fait en combinant chauffage et ECS
 
 ### Test de calculs
 
 - `GET /test-calculs` : page de simulation de scenarios de chauffe
 - `POST /test-calculs` : calcule un scenario manuel sans modifier l'etat persistant
+- `GET /test-consommation` : page de simulation de consommation chauffage plus ECS
+- `POST /test-consommation` : calcule un scenario de consommation sans modifier l'etat persistant
 
 Cette page sert a:
 
 - charger un preset de scenario
 - modifier les valeurs par zone
 - verifier la repartition produite par le moteur
+
+Le mode consommation ajoute:
+
+- une saisie ECS par occupant
+- une facture combustible totale et son libelle
+- une synthese combinee chauffage plus ECS
 
 ## OpenAPI native FastAPI
 

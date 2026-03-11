@@ -1,6 +1,14 @@
 from datetime import datetime, timezone
 
-from app.models.schemas import AllocationInput, ThermostatSample
+from app.core.config import BILLING_ECS_WEIGHT
+from app.models.schemas import AllocationInput, EcsAllocationLine, EcsAllocationRun, ThermostatSample
+
+
+SCENARIO_ECS_DEFAULTS = {
+    "balanced": {"Alice": 1.8, "Benoit": 1.2},
+    "living_room_peak": {"Alice": 2.4, "Benoit": 0.9},
+    "night_setback": {"Alice": 1.6, "Benoit": 1.7},
+}
 
 
 def _sample(
@@ -113,3 +121,49 @@ def build_rows(payload: AllocationInput) -> list[dict[str, object]]:
         }
         for sample in payload.samples
     ]
+
+
+def build_ecs_rows(payload: AllocationInput, scenario_key: str = "") -> list[dict[str, object]]:
+    defaults = SCENARIO_ECS_DEFAULTS.get(scenario_key, {})
+    owner_names = sorted({sample.owner_name for sample in payload.samples if sample.owner_name.strip()})
+    return [
+        {
+            "owner_name": owner_name,
+            "ecs_delta_m3": defaults.get(owner_name, 0.0),
+        }
+        for owner_name in owner_names
+    ]
+
+
+def build_test_ecs_allocation(
+    owner_deltas_m3: dict[str, float],
+    total_amount: float,
+    amount_label: str,
+    period_label: str,
+) -> EcsAllocationRun:
+    total_consumption_m3 = sum(max(value, 0.0) for value in owner_deltas_m3.values())
+    allocations: list[EcsAllocationLine] = []
+    normalized_total = max(total_amount, 0.0)
+    ecs_component_total = normalized_total * BILLING_ECS_WEIGHT
+    for owner_name in sorted(owner_deltas_m3):
+        delta_m3 = max(owner_deltas_m3[owner_name], 0.0)
+        share_percent = 0.0 if total_consumption_m3 == 0 else (delta_m3 / total_consumption_m3) * 100.0
+        allocated_amount = 0.0 if total_consumption_m3 == 0 else (delta_m3 / total_consumption_m3) * ecs_component_total
+        allocations.append(
+            EcsAllocationLine(
+                owner_name=owner_name,
+                previous_index_m3=None,
+                current_index_m3=round(delta_m3, 3),
+                delta_m3=round(delta_m3, 3),
+                share_percent=round(share_percent, 2),
+                allocated_amount=round(allocated_amount, 2),
+            )
+        )
+    return EcsAllocationRun(
+        period_label=period_label.strip(),
+        amount_label=amount_label.strip() or "EUR",
+        total_amount=round(normalized_total, 2),
+        total_consumption_m3=round(total_consumption_m3, 3),
+        calculated_at=datetime.now(timezone.utc),
+        allocations=allocations,
+    )

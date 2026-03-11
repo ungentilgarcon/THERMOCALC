@@ -13,6 +13,10 @@ realtime_measurement_max_age_minutes = 180
 trv26_duty_cycle_window_hours = 24
 trv26_history_retention_hours = 72
 
+[billing]
+heating_weight = 0.5
+ecs_weight = 0.5
+
 [alerts]
 low_battery_threshold_percent = 10
 email_to = ""
