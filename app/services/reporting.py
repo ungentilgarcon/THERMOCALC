@@ -22,7 +22,7 @@ def build_monthly_pdf(report: MonthlyAllocationReport) -> bytes:
 
     pdf.setFont("Helvetica", 10)
     pdf.drawString(2 * cm, height - 3.3 * cm, f"Methode: {report.methodology}")
-    pdf.drawString(2 * cm, height - 3.9 * cm, "Repartition relative basee sur consigne, temperature reelle, surface et ouverture de vanne.")
+    pdf.drawString(2 * cm, height - 3.9 * cm, "Repartition relative basee sur delta, surface et facteur de demande compose.")
 
     y = height - 5.2 * cm
     pdf.setFillColor(colors.HexColor("#17324d"))
@@ -52,7 +52,9 @@ def build_monthly_pdf(report: MonthlyAllocationReport) -> bytes:
     for zone in report.zones:
         line = (
             f"{zone.owner_name} | {zone.zone_label} | delta {zone.delta_c:.1f} C | "
-            f"surface {zone.surface_m2:.1f} m2 | vanne {zone.valve_factor * 100:.0f}% | score {zone.effort_score:.2f}"
+            f"surface {zone.surface_m2:.1f} m2 | vanne {zone.valve_factor * 100:.0f}% | "
+            f"etat {zone.running_state} | duty {(zone.duty_cycle_percent if zone.duty_cycle_percent is not None else 0):.1f}% | "
+            f"demande {zone.demand_factor * 100:.0f}% | score {zone.effort_score:.2f}"
         )
         pdf.drawString(2 * cm, y, line)
         y -= 0.45 * cm

@@ -8,6 +8,10 @@
       Estimation relative par occupant a partir des temperatures de consigne, temperatures observees,
       surfaces de chauffage et niveaux d'ouverture des tetes thermostatiques.
     </p>
+    <div class="source-indicator source-indicator-{{ payload_source.tone }}">
+      <strong>{{ payload_source.label }}</strong>
+      <span>{{ payload_source.detail }}</span>
+    </div>
   </div>
   <div class="hero-actions">
     <a class="button primary" href="/reports/monthly.pdf">Exporter le PDF</a>
@@ -47,6 +51,9 @@
         <th>Delta</th>
         <th>Surface</th>
         <th>Vanne</th>
+        <th>Etat</th>
+        <th>Duty</th>
+        <th>Demande</th>
         <th>Score</th>
       </tr>
     </thead>
@@ -58,6 +65,9 @@
         <td>{{ zone.delta_c }} C</td>
         <td>{{ zone.surface_m2 }} m2</td>
         <td>{{ (zone.valve_factor * 100) | round(0) }}%</td>
+        <td>{{ zone.running_state }}</td>
+        <td>{% if zone.duty_cycle_percent is not none %}{{ zone.duty_cycle_percent }}%{% else %}n/d{% endif %}</td>
+        <td>{{ (zone.demand_factor * 100) | round(0) }}%</td>
         <td>{{ zone.effort_score }}</td>
       </tr>
       {% endfor %}

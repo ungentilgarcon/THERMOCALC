@@ -10,6 +10,20 @@ runtime_measurements_path = "runtime_measurements.json"
 realtime_mqtt_enabled = true
 sample_fallback_enabled = true
 realtime_measurement_max_age_minutes = 180
+trv26_duty_cycle_window_hours = 24
+trv26_history_retention_hours = 72
+
+[alerts]
+low_battery_threshold_percent = 10
+email_to = ""
+email_from = "thermocalc@localhost"
+
+[smtp]
+host = ""
+port = 587
+username = ""
+password = ""
+use_tls = true
 
 [zigbee2mqtt.defaults]
 controller_id = "z2m-main"

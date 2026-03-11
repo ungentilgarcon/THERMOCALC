@@ -7,6 +7,10 @@
     <p class="hero-copy">
       Gere les affectations TRV26, les surfaces de chauffage et la generation archivee des rapports mensuels.
     </p>
+    <div class="source-indicator source-indicator-{{ payload_source.tone }}">
+      <strong>{{ payload_source.label }}</strong>
+      <span>{{ payload_source.detail }}</span>
+    </div>
     {% if notice %}
     <p class="notice">{{ notice }}</p>
     {% endif %}
@@ -460,6 +464,66 @@
         <article class="list-item">
           <strong>Aucune topologie disponible</strong>
           <small>Ajoute au moins un controleur et des devices pour visualiser les liens.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Telemetrie TRV26</p>
+          <h2>Batterie, etat et duty cycle</h2>
+        </div>
+      </div>
+      <div class="admin-list telemetry-list">
+        {% for item in trv26_telemetry %}
+        <article class="list-item telemetry-card {% if item.needs_battery_replacement %}telemetry-card-alert{% endif %}">
+          <div class="telemetry-header">
+            <div>
+              <strong>{{ item.friendly_name }}</strong>
+              <span>{{ item.trv_id }}{% if item.controller_id %} · {{ item.controller_id }}{% endif %}</span>
+            </div>
+            <span class="telemetry-badge {% if item.needs_battery_replacement %}telemetry-badge-alert{% else %}telemetry-badge-ok{% endif %}">{{ item.battery_status }}</span>
+          </div>
+          <small>
+            {{ item.owner_name or "Occupant non renseigne" }}{% if item.zone_label %} · {{ item.zone_label }}{% endif %}
+            {% if item.captured_at %} · {{ item.captured_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+          </small>
+          <div class="telemetry-grid">
+            <div>
+              <span class="telemetry-label">Battery</span>
+              <strong>{% if item.battery_percent is not none %}{{ item.battery_percent }}%{% else %}n/d{% endif %}</strong>
+            </div>
+            <div>
+              <span class="telemetry-label">Running state</span>
+              <strong>{{ item.running_state }}</strong>
+            </div>
+            <div>
+              <span class="telemetry-label">Preset</span>
+              <strong>{{ item.preset }}</strong>
+            </div>
+            <div>
+              <span class="telemetry-label">Error status</span>
+              <strong>{% if item.error_status is not none %}{{ item.error_status }}{% else %}0 / n.d{% endif %}</strong>
+            </div>
+            <div>
+              <span class="telemetry-label">Duty cycle</span>
+              <strong>{% if item.duty_cycle_percent is not none %}{{ item.duty_cycle_percent }}%{% else %}n/d{% endif %}</strong>
+            </div>
+            <div>
+              <span class="telemetry-label">Historique</span>
+              <strong>{{ item.history_points }} points</strong>
+            </div>
+          </div>
+          {% if item.needs_battery_replacement %}
+          <small class="telemetry-warning">Piles a remplacer. Une alerte mail est envoyee si une adresse est configuree.</small>
+          {% endif %}
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucune telemetrie TRV26</strong>
+          <small>Active au moins un bridge Zigbee2MQTT et laisse remonter des mesures MQTT pour remplir ce panneau.</small>
         </article>
         {% endfor %}
       </div>

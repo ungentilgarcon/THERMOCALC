@@ -91,6 +91,43 @@ small {
   color: var(--muted);
 }
 
+.source-indicator {
+  display: inline-grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  max-width: 560px;
+}
+
+.source-indicator strong {
+  font-size: 0.95rem;
+}
+
+.source-indicator span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.source-indicator-live {
+  background: rgba(23, 50, 77, 0.08);
+  border-color: rgba(23, 50, 77, 0.22);
+}
+
+.source-indicator-live strong {
+  color: var(--cool);
+}
+
+.source-indicator-fallback {
+  background: rgba(201, 108, 58, 0.12);
+  border-color: rgba(201, 108, 58, 0.28);
+}
+
+.source-indicator-fallback strong {
+  color: var(--warm-deep);
+}
+
 .hero-actions {
   display: flex;
   flex-direction: column;
@@ -259,6 +296,76 @@ small {
   gap: 12px;
 }
 
+.telemetry-list {
+  gap: 14px;
+}
+
+.telemetry-card {
+  display: grid;
+  gap: 12px;
+}
+
+.telemetry-card-alert {
+  border-color: rgba(143, 63, 32, 0.3);
+  background: rgba(201, 108, 58, 0.12);
+}
+
+.telemetry-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.telemetry-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+}
+
+.telemetry-badge-ok {
+  color: var(--cool);
+  background: rgba(23, 50, 77, 0.08);
+}
+
+.telemetry-badge-alert {
+  color: var(--warm-deep);
+  background: rgba(201, 108, 58, 0.14);
+  border-color: rgba(143, 63, 32, 0.24);
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.telemetry-grid > div {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--line);
+}
+
+.telemetry-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.telemetry-warning {
+  color: var(--warm-deep);
+  font-weight: 700;
+}
+
 .list-item {
   padding: 14px 16px;
   border-radius: 18px;
@@ -358,7 +465,8 @@ th {
   .section-heading,
   .admin-layout,
   .form-grid,
-  .topology-grid {
+  .topology-grid,
+  .telemetry-grid {
     grid-template-columns: 1fr;
     display: grid;
   }

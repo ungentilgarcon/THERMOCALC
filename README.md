@@ -1,6 +1,6 @@
 # ThermoCalc
 
-Application web de suivi et de repartition approximative de consommation de chauffage a partir de tetes thermostatiques Zigbee TRV26.
+Application web de suivi et de repartition de consommation de chauffage a partir de tetes thermostatiques Zigbee TRV26.
 
 ## Objectif
 
@@ -13,37 +13,42 @@ Chaque personne dispose d'un ensemble different de tetes thermostatiques, rattac
 
 Le resultat est une repartition relative en pourcentage, pas une mesure physique exacte en kWh. Le modele pourra ensuite etre calibre avec une consommation reelle de chaudiere ou de compteur global.
 
-## Hypothese de calcul initiale
+## Hypothese De Calcul
 
-Pour chaque mesure d'une tete:
+Pour chaque mesure d'une tete, ThermoCalc construit d'abord un facteur de demande composite:
 
 - delta = max(temperature_consigne - temperature_reelle, 0)
-- effort = delta x coefficient_surface x coefficient_ouverture
+- facteur_vanne = ouverture_vanne / 100
+- facteur_etat = 1 si `running_state = heat`, 0 si `running_state = idle`, 0.5 si l'etat n'est pas connu
+- facteur_duty = duty_cycle / 100 quand il est disponible, sinon on retombe sur `facteur_vanne`
+- facteur_demande = 0.55 x facteur_vanne + 0.25 x facteur_etat + 0.20 x facteur_duty
+- effort = delta x surface x facteur_demande
 
 Sur un mois, on somme l'effort de toutes les tetes d'une personne, puis on normalise pour obtenir un pourcentage du total.
 
-## Fonctionnalites incluses
+## Fonctionnalites Incluses
 
 - API FastAPI
 - page web de suivi mensuel
 - ecran d'administration pour gerer occupants, tetes et surfaces
-- donnees d'exemple pour demarrage rapide
 - generation de rapport PDF mensuel
 - planification mensuelle automatique de generation PDF
 - authentification simple par session sur l'administration
 - gestion fine des archives PDF: filtrage, renommage, suppression et export ZIP
 - zone Zigbee modulaire en admin pour plusieurs controleurs, detecteurs, tetes et recepteurs
-- integration Zigbee2MQTT reelle via MQTT pour discovery et permit_join
+- integration Zigbee2MQTT reelle via MQTT pour discovery, permit_join et telemetrie temps reel
 - synchronisation automatique des thermostats Zigbee vers les affectations de consommation
 - vue de topologie par controleur
-- tests unitaires du modele de calcul
+- panneau de telemetrie TRV26 avec batterie, running state, preset, error status et duty cycle
+- alerte mail quand une batterie descend sous le seuil configure
+- tests unitaires du modele de calcul et des integrations principales
 
 ## Demarrage
 
 1. Creer un environnement Python 3.11 ou plus.
 2. Installer le projet en mode editable avec les dependances de dev.
-3. Lancer le serveur Uvicorn.
-4. Ajuster le fichier `thermocalc.config.toml` a la racine du projet.
+3. Ajuster le fichier `thermocalc.config.toml` a la racine du projet.
+4. Lancer le serveur Uvicorn.
 
 Commandes typiques:
 
@@ -64,6 +69,9 @@ Le fichier couvre notamment:
 - le secret de session
 - le stockage local des dernieres mesures TRV
 - l'activation du mode temps reel MQTT et la fenetre de fraicheur des mesures
+- la fenetre de calcul du duty cycle TRV26 et la retention d'historique
+- le seuil batterie faible et l'adresse mail de notification
+- la configuration SMTP d'envoi d'alerte
 - les valeurs par defaut du bridge Zigbee2MQTT
 - l'URL MQTT, le login, le mot de passe et le `base_topic`
 - l'intervalle d'auto-discovery
@@ -84,6 +92,20 @@ runtime_measurements_path = "runtime_measurements.json"
 realtime_mqtt_enabled = true
 sample_fallback_enabled = true
 realtime_measurement_max_age_minutes = 180
+trv26_duty_cycle_window_hours = 24
+trv26_history_retention_hours = 72
+
+[alerts]
+low_battery_threshold_percent = 10
+email_to = "maintenance@example.com"
+email_from = "thermocalc@example.com"
+
+[smtp]
+host = "smtp.example.com"
+port = 587
+username = "smtp-user"
+password = "smtp-password"
+use_tls = true
 
 [zigbee2mqtt.defaults]
 controller_id = "z2m-main"
@@ -99,14 +121,15 @@ permit_join_seconds = 60
 
 ## Fonctionnement Global
 
-Le projet fonctionne en quatre couches principales:
+Le projet fonctionne en cinq couches principales:
 
 1. collecte et administration des metadonnees
 2. inventaire Zigbee et appairages logiques
-3. calcul de repartition de consommation
-4. restitution web, PDF et archives
+3. collecte temps reel et telemetrie TRV26
+4. calcul de repartition de consommation
+5. restitution web, PDF et archives
 
-### 1. Administration metier
+### 1. Administration Metier
 
 Depuis `/admin`, on renseigne:
 
@@ -130,28 +153,41 @@ L'inventaire distant remonte des devices classes comme:
 - `detector`
 - `receiver`
 
-### 3. Synchronisation thermostat
+### 3. Telemetrie TRV26
 
-Quand une tete Zigbee de role `thermostat` est connue avec:
+Le provider `zigbee2mqtt` ecoute les releves TRV en fond sur `zigbee2mqtt/<friendly_name>` pour chaque controleur actif.
 
-- un occupant
-- une zone
-- une surface
+ThermoCalc conserve:
 
-alors une affectation de consommation TRV correspondante est synchronisee automatiquement.
+- les derniers points utiles au calcul
+- un historique roulant local pour chaque tete
+- les champs de telemetrie `battery`, `running_state`, `preset` et `error_status`
 
-Inversement, si une affectation TRV est modifiee pour une tete deja connue dans l'inventaire Zigbee, les metadonnees du device Zigbee thermostat sont realignees.
+Le panneau "Telemetrie TRV26" de l'administration affiche aussi un premier duty cycle calcule sur la fenetre `trv26_duty_cycle_window_hours`.
 
-### 4. Calcul de consommation
+Si une tete descend sous `low_battery_threshold_percent`, elle est marquee `A remplacer` dans l'administration et une alerte mail est envoyee a `alerts.email_to` quand le SMTP est configure.
 
-Le moteur de calcul privilegie maintenant les dernieres mesures TRV26 recues en MQTT. Si aucune mesure recente n'est disponible, il retombe sur le jeu JSON d'exemple. Il applique ensuite une ponderation simple:
+### 4. Calcul De Consommation
 
-- $
-\Delta = \max(T_{consigne} - T_{reelle}, 0)
-$
-- $effort = \Delta \times surface \times ouverture$
+Le moteur de calcul privilegie les dernieres mesures TRV26 recues en MQTT. Si aucune mesure recente n'est disponible, il retombe sur le jeu JSON de test local.
+
+Il applique ensuite une ponderation simple:
+
+- $\Delta = \max(T_{consigne} - T_{reelle}, 0)$
+- $f_{vanne} = ouverture / 100$
+- $f_{etat} = 1$ si `heat`, $0$ si `idle`, sinon $0.5$
+- $f_{duty} = duty\_cycle / 100$ ou $f_{vanne}$ si le duty cycle n'est pas disponible
+- $f_{demande} = 0.55 \times f_{vanne} + 0.25 \times f_{etat} + 0.20 \times f_{duty}$
+- $effort = \Delta \times surface \times f_{demande}$
 
 Les scores par tete sont agreges par occupant puis normalises en pourcentage mensuel.
+
+Cette formule garde la vanne comme signal principal, mais elle corrige le calcul avec:
+
+- l'etat instantane de chauffe `running_state`
+- l'activite recente de la tete via le duty cycle
+
+Cela evite qu'une simple ouverture instantanee de vanne pondere trop fortement une tete qui n'est presque jamais en chauffe sur la periode recente.
 
 ### 5. Restitution
 
@@ -170,11 +206,12 @@ Le projet produit:
 - `app/services/consumption.py` contient le modele de repartition.
 - `app/services/reporting.py` genere le PDF mensuel.
 - `app/services/admin_state.py` persiste la configuration occupants, tetes et planning.
-- `app/services/runtime_measurements.py` maintient les derniers releves TRV26 recus sur MQTT et gere les abonnements en fond.
+- `app/services/runtime_measurements.py` maintient les derniers releves TRV26 recus sur MQTT, l'historique roulant et les abonnements en fond.
+- `app/services/notifications.py` envoie les alertes mail de batterie faible.
 - `app/services/scheduler.py` verifie la planification et ecrit les PDF sur disque.
 - `app/services/zigbee2mqtt.py` pilote la discovery MQTT et `permit_join` pour les bridges Zigbee2MQTT.
-- `data/sample_data.json` fournit un jeu de donnees de demonstration.
-- `data/runtime_measurements.json` persiste les dernieres mesures temps reel retenues par le calcul.
+- `data/sample_data.json` fournit un jeu JSON de test.
+- `data/runtime_measurements.json` persiste les dernieres mesures temps reel retenues par le calcul et la telemetrie.
 
 ## Administration
 
@@ -187,9 +224,10 @@ L'ecran `/admin` permet de:
 - lancer la discovery Zigbee2MQTT sur `bridge/devices`
 - activer `permit_join` depuis l'administration pour un bridge Zigbee2MQTT
 - tester la connectivite MQTT et l'etat du bridge
-- activer une remontée automatique periodique de discovery par controleur
+- activer une remontee automatique periodique de discovery par controleur
 - preparer l'appairage guide d'une nouvelle tete thermostatique
 - affecter une tete TRV26 a un occupant et a une surface de chauffage
+- suivre la telemetrie TRV26 avec batterie, running state, preset, error status et duty cycle
 - laisser le dashboard et les PDF basculer automatiquement sur les mesures MQTT recentes quand elles existent
 - regler un planning mensuel de generation PDF
 - lancer manuellement la generation d'un PDF archive sur disque
@@ -197,7 +235,7 @@ L'ecran `/admin` permet de:
 - renommer ou supprimer une archive existante
 - exporter un lot d'archives en ZIP
 
-Les fichiers de configuration sont stockes dans `data/admin_state.json`. Les PDF archives sont ecrits dans `generated_reports/`.
+Les fichiers de configuration metier sont stockes dans `data/admin_state.json`. Les PDF archives sont ecrits dans `generated_reports/`.
 
 L'authentification admin est volontairement simple. Par defaut, ces valeurs sont lues depuis `thermocalc.config.toml`:
 
@@ -212,20 +250,15 @@ La zone Zigbee en administration est modulaire:
 - chaque controleur peut exposer plusieurs devices de type detecteur, tete thermostatique ou recepteur
 - les liens d'appairage sont geres explicitement pour permettre plusieurs detecteurs et plusieurs recepteurs
 
-Le provider `mock` est operationnel pour preparer la topologie. Le provider `zigbee2mqtt` est prevu comme point d'integration pour un bridge reel et un futur `permit_join` ou inventaire distant.
-
-Le provider `zigbee2mqtt` est maintenant branche via MQTT:
+Le provider `zigbee2mqtt` est branche via MQTT:
 
 - `endpoint_url` attend un broker du type `mqtt://hote:1883`
 - `base_topic` vaut `zigbee2mqtt` par defaut
 - la discovery lit `zigbee2mqtt/bridge/devices`
 - l'appairage physique publie sur `zigbee2mqtt/bridge/request/permit_join`
 - un test de connectivite s'abonne a `zigbee2mqtt/bridge/state` quand disponible
-- les releves TRV sont ecoutes en fond sur `zigbee2mqtt/<friendly_name>` pour chaque controleur actif
 
 Une auto-discovery periodique peut etre activee par controleur. Le scheduler applicatif rafraichit alors l'inventaire sans action manuelle et conserve les metadonnees metier deja saisies sur les thermostats.
-
-Les mesures temps reel conservees pour le calcul sont stockees dans `data/runtime_measurements.json`. Seules les mesures recentes, dans la fenetre `realtime_measurement_max_age_minutes`, sont retenues.
 
 Quand un device Zigbee de role `thermostat` est renseigne avec occupant, zone et surface, l'affectation de consommation correspondante est synchronisee automatiquement sur la tete homologue.
 
@@ -241,5 +274,6 @@ Le projet cible les tetes type TRV26 exposees via Zigbee2MQTT. L'integration MQT
 - l'activation de `permit_join`
 - le test de connectivite du bridge
 - la remontee temps reel des mesures utilisees par le calcul de repartition
+- la remontee de telemetrie TRV26 et les alertes batterie faible
 
-Le fichier `data/sample_data.json` reste present comme repli progressif tant que toutes les tetes ne remontent pas encore leurs mesures en MQTT.
+Le fichier `data/sample_data.json` reste present comme jeu JSON de test tant que toutes les tetes ne remontent pas encore leurs mesures en MQTT.

@@ -12,6 +12,8 @@ class ThermostatSample(BaseModel):
     target_temperature_c: float
     current_temperature_c: float
     valve_open_percent: float = Field(ge=0, le=100)
+    running_state: str = ""
+    duty_cycle_percent: float | None = Field(default=None, ge=0, le=100)
     captured_at: datetime
 
 
@@ -27,6 +29,11 @@ class ZoneEffort(BaseModel):
     surface_m2: float
     delta_c: float
     valve_factor: float
+    running_state: str = ""
+    running_state_factor: float
+    duty_cycle_percent: float | None = None
+    duty_cycle_factor: float
+    demand_factor: float
     effort_score: float
 
 
@@ -43,7 +50,7 @@ class MonthlyAllocationReport(BaseModel):
     generated_at: datetime
     allocations: list[PersonAllocation]
     zones: list[ZoneEffort]
-    methodology: Literal["delta-surface-valve-v1"] = "delta-surface-valve-v1"
+    methodology: Literal["delta-surface-demand-v2"] = "delta-surface-demand-v2"
 
 
 class Occupant(BaseModel):

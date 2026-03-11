@@ -233,6 +233,10 @@ def test_extract_measurement_reads_trv26_payload() -> None:
             "occupied_heating_setpoint": 20.5,
             "local_temperature": 19.1,
             "pi_heating_demand": 47,
+            "battery": 62,
+            "running_state": "heat",
+            "preset": "manual",
+            "error_status": 0,
             "last_seen": "2026-03-10T08:15:00Z",
         },
     )
@@ -241,6 +245,24 @@ def test_extract_measurement_reads_trv26_payload() -> None:
     assert measurement["trv_id"] == "trv26-salon-1"
     assert measurement["controller_id"] == "bridge-a"
     assert measurement["valve_open_percent"] == 47
+    assert measurement["battery_percent"] == 62
+    assert measurement["running_state"] == "heat"
+    assert measurement["preset"] == "manual"
+    assert measurement["error_status"] == 0
+
+
+def test_compute_duty_cycle_percent_uses_recent_history(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_measurements_service, "TRV26_DUTY_CYCLE_WINDOW_HOURS", 24)
+    now = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
+    history = [
+        {"captured_at": "2026-03-10T08:00:00+00:00", "running_state": "heat", "valve_open_percent": 60},
+        {"captured_at": "2026-03-10T10:00:00+00:00", "running_state": "idle", "valve_open_percent": 0},
+        {"captured_at": "2026-03-10T11:00:00+00:00", "running_state": "heat", "valve_open_percent": 50},
+    ]
+
+    duty_cycle = runtime_measurements_service.compute_duty_cycle_percent(history, now=now)
+
+    assert duty_cycle == 75.0
 
 
 def test_build_realtime_payload_uses_recent_snapshots(tmp_path, monkeypatch) -> None:
@@ -351,3 +373,101 @@ def test_load_sample_payload_prefers_realtime_measurements(tmp_path, monkeypatch
 
     assert payload.samples[0].target_temperature_c == 21
     assert payload.samples[0].current_temperature_c == 18
+
+
+def test_build_trv26_telemetry_exposes_battery_and_duty_cycle(tmp_path, monkeypatch) -> None:
+    runtime_file = tmp_path / "runtime_measurements.json"
+    monkeypatch.setattr(runtime_measurements_service, "RUNTIME_MEASUREMENTS_PATH", runtime_file)
+    monkeypatch.setattr(runtime_measurements_service, "TRV26_DUTY_CYCLE_WINDOW_HOURS", 24)
+    runtime_measurements_service._RUNTIME_SNAPSHOTS.clear()
+
+    state = AdminState.model_validate(
+        {
+            "thermostats": [
+                {
+                    "trv_id": "trv26-salon-1",
+                    "zone_label": "Salon",
+                    "owner_name": "Alice",
+                    "surface_m2": 25.0,
+                }
+            ],
+            "zigbee_devices": [
+                {
+                    "device_id": "trv26-salon-1",
+                    "controller_id": "bridge-a",
+                    "role": "thermostat",
+                    "friendly_name": "TRV Salon",
+                }
+            ],
+        }
+    )
+
+    runtime_file.write_text(
+        '{"measurements":[{"trv_id":"trv26-salon-1","controller_id":"bridge-a","target_temperature_c":21,"current_temperature_c":19,"valve_open_percent":55,"battery_percent":9,"running_state":"heat","preset":"manual","error_status":0,"needs_battery_replacement":true,"captured_at":"2026-03-10T11:00:00+00:00","history":[{"captured_at":"2026-03-10T08:00:00+00:00","running_state":"heat","valve_open_percent":60,"battery_percent":9,"preset":"manual","error_status":0},{"captured_at":"2026-03-10T10:00:00+00:00","running_state":"idle","valve_open_percent":0,"battery_percent":9,"preset":"manual","error_status":0},{"captured_at":"2026-03-10T11:00:00+00:00","running_state":"heat","valve_open_percent":55,"battery_percent":9,"preset":"manual","error_status":0}],"raw_payload":{}}]}',
+        encoding="utf-8",
+    )
+
+    telemetry = runtime_measurements_service.build_trv26_telemetry(state)
+
+    assert telemetry[0]["friendly_name"] == "TRV Salon"
+    assert telemetry[0]["battery_percent"] == 9
+    assert telemetry[0]["needs_battery_replacement"] is True
+    assert telemetry[0]["running_state"] == "heat"
+    assert telemetry[0]["preset"] == "manual"
+    assert telemetry[0]["history_points"] == 3
+
+
+def test_low_battery_alert_sent_once_per_low_battery_episode(tmp_path, monkeypatch) -> None:
+    runtime_file = tmp_path / "runtime_measurements.json"
+    admin_file = tmp_path / "admin_state.json"
+    monkeypatch.setattr(runtime_measurements_service, "RUNTIME_MEASUREMENTS_PATH", runtime_file)
+    monkeypatch.setattr(admin_state_service, "ADMIN_STATE_PATH", admin_file)
+    runtime_measurements_service._RUNTIME_SNAPSHOTS.clear()
+    admin_state_service.save_admin_state(
+        AdminState.model_validate(
+            {
+                "thermostats": [
+                    {
+                        "trv_id": "trv26-salon-1",
+                        "zone_label": "Salon",
+                        "owner_name": "Alice",
+                        "surface_m2": 25.0,
+                    }
+                ]
+            }
+        )
+    )
+
+    calls: list[tuple[str, int, str, str]] = []
+
+    def fake_alert(device_id: str, battery_percent: int, owner_name: str = "", zone_label: str = "") -> bool:
+        calls.append((device_id, battery_percent, owner_name, zone_label))
+        return True
+
+    monkeypatch.setattr(runtime_measurements_service.notifications, "send_low_battery_alert", fake_alert)
+
+    runtime_measurements_service.record_runtime_measurement(
+        device_id="trv26-salon-1",
+        controller_id="bridge-a",
+        payload={"occupied_heating_setpoint": 21, "local_temperature": 18, "pi_heating_demand": 50, "battery": 9, "last_seen": datetime.now(timezone.utc).isoformat()},
+    )
+    runtime_measurements_service.record_runtime_measurement(
+        device_id="trv26-salon-1",
+        controller_id="bridge-a",
+        payload={"battery": 8, "timestamp": datetime.now(timezone.utc).isoformat()},
+    )
+    runtime_measurements_service.record_runtime_measurement(
+        device_id="trv26-salon-1",
+        controller_id="bridge-a",
+        payload={"battery": 25, "timestamp": datetime.now(timezone.utc).isoformat()},
+    )
+    runtime_measurements_service.record_runtime_measurement(
+        device_id="trv26-salon-1",
+        controller_id="bridge-a",
+        payload={"battery": 7, "timestamp": datetime.now(timezone.utc).isoformat()},
+    )
+
+    assert calls == [
+        ("trv26-salon-1", 9, "Alice", "Salon"),
+        ("trv26-salon-1", 7, "Alice", "Salon"),
+    ]

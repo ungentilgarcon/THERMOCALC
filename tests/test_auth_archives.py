@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.schemas import ArchiveAllocationSnapshot, ArchiveRecord
+from app.models.schemas import AllocationInput, ArchiveAllocationSnapshot, ArchiveRecord, ThermostatSample
 from app.services import auth
 from app.services.archives import _matches_month_range, _matches_owner
+from app.api import routes
 
 
 def test_admin_login_required(monkeypatch) -> None:
@@ -42,3 +43,35 @@ def test_archive_filters_match_expected_owner_and_month() -> None:
     assert _matches_owner(record, "Benoit") is False
     assert _matches_month_range(record, "2026-02", "2026-03") is True
     assert _matches_month_range(record, "2026-04", None) is False
+
+
+def test_dashboard_shows_payload_source_indicator(monkeypatch) -> None:
+    payload = AllocationInput(
+        month_label="2026-03",
+        samples=[
+            ThermostatSample(
+                trv_id="trv26-salon-1",
+                zone_label="Salon",
+                owner_name="Alice",
+                surface_m2=25,
+                target_temperature_c=21,
+                current_temperature_c=19,
+                valve_open_percent=60,
+                captured_at="2026-03-01T08:15:00Z",
+            )
+        ],
+    )
+    source = routes.PayloadSource(
+        code="mqtt",
+        label="MQTT temps reel",
+        detail="Calcul base sur les dernieres mesures TRV26 remontees par Zigbee2MQTT.",
+        tone="live",
+    )
+    monkeypatch.setattr(routes, "load_payload_with_source", lambda: (payload, source))
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "MQTT temps reel" in response.text
+    assert "dernieres mesures TRV26" in response.text

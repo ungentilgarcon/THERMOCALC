@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -39,7 +40,7 @@ from app.services.admin_state import (
 from app.services.auth import ensure_admin, is_admin_authenticated, login_admin, logout_admin
 from app.services.consumption import build_monthly_allocation
 from app.services.reporting import build_monthly_pdf
-from app.services.runtime_measurements import build_realtime_payload
+from app.services.runtime_measurements import build_realtime_payload, build_trv26_telemetry
 from app.services.scheduler import run_scheduled_generation_once
 from app.services.zigbee import (
     build_zigbee_overview,
@@ -54,14 +55,36 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
-def load_sample_payload() -> AllocationInput:
+@dataclass(frozen=True)
+class PayloadSource:
+    code: str
+    label: str
+    detail: str
+    tone: str
+
+
+def load_payload_with_source() -> tuple[AllocationInput, PayloadSource]:
     admin_state = load_admin_state()
     realtime_payload = build_realtime_payload(admin_state)
     if realtime_payload is not None:
-        return realtime_payload
+        return realtime_payload, PayloadSource(
+            code="mqtt",
+            label="MQTT temps reel",
+            detail="Calcul base sur les dernieres mesures TRV26 remontees par Zigbee2MQTT.",
+            tone="live",
+        )
     content = json.loads(Path(SAMPLE_DATA_PATH).read_text(encoding="utf-8"))
     payload = AllocationInput.model_validate(content)
-    return apply_assignments_to_payload(payload, admin_state)
+    return apply_assignments_to_payload(payload, admin_state), PayloadSource(
+        code="json",
+        label="JSON de test",
+        detail="Calcul base sur le jeu JSON de test local, utilise tant que les mesures MQTT ne couvrent pas encore le besoin.",
+        tone="fallback",
+    )
+
+
+def load_sample_payload() -> AllocationInput:
+    return load_payload_with_source()[0]
 
 
 def admin_redirect(notice: str) -> RedirectResponse:
@@ -78,11 +101,12 @@ def sanitize_filename(filename: str) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
-    report = build_monthly_allocation(load_sample_payload())
+    payload, payload_source = load_payload_with_source()
+    report = build_monthly_allocation(payload)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"report": report},
+        context={"report": report, "payload_source": payload_source},
     )
 
 
@@ -97,7 +121,8 @@ def admin_page(
     if not is_admin_authenticated(request):
         return admin_login_redirect()
     admin_state = load_admin_state()
-    report = build_monthly_allocation(load_sample_payload())
+    payload, payload_source = load_payload_with_source()
+    report = build_monthly_allocation(payload)
     archive_records = list_archive_records(
         start_month=start_month or None,
         end_month=end_month or None,
@@ -119,6 +144,8 @@ def admin_page(
             "provider_options": list_provider_options(),
             "device_role_options": list_device_role_options(),
             "pairing_relation_options": list_pairing_relation_options(),
+            "payload_source": payload_source,
+            "trv26_telemetry": build_trv26_telemetry(admin_state),
             "zigbee_overview": build_zigbee_overview(admin_state),
             "config_defaults": {
                 "controller_id": DEFAULT_ZIGBEE2MQTT_CONTROLLER_ID,
