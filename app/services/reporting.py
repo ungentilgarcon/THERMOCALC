@@ -5,13 +5,11 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
-
-from app.models.schemas import MonthlyAllocationReport
+from app.models.schemas import EcsAllocationRun, MonthlyAllocationReport
 from app.services.archives import upsert_archive_record
 
 
-
-def build_monthly_pdf(report: MonthlyAllocationReport) -> bytes:
+def build_monthly_pdf(report: MonthlyAllocationReport, ecs_allocation: EcsAllocationRun | None = None) -> bytes:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -23,25 +21,35 @@ def build_monthly_pdf(report: MonthlyAllocationReport) -> bytes:
     pdf.setFont("Helvetica", 10)
     pdf.drawString(2 * cm, height - 3.3 * cm, f"Methode: {report.methodology}")
     pdf.drawString(2 * cm, height - 3.9 * cm, "Repartition relative basee sur delta, surface et facteur de demande compose.")
+    if ecs_allocation is not None:
+        ecs_period = ecs_allocation.period_label or report.month_label
+        pdf.drawString(
+            2 * cm,
+            height - 4.5 * cm,
+            f"ECS: {ecs_allocation.total_amount:.2f} {ecs_allocation.amount_label} repartis pour {ecs_period}.",
+        )
 
     y = height - 5.2 * cm
     pdf.setFillColor(colors.HexColor("#17324d"))
     pdf.rect(2 * cm, y, width - 4 * cm, 0.7 * cm, fill=1, stroke=0)
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 11)
+    combined_rows = build_combined_allocation_rows(report, ecs_allocation=ecs_allocation)
     pdf.drawString(2.2 * cm, y + 0.23 * cm, "Occupant")
-    pdf.drawString(8.4 * cm, y + 0.23 * cm, "Part")
-    pdf.drawString(11.4 * cm, y + 0.23 * cm, "Score")
-    pdf.drawString(14.6 * cm, y + 0.23 * cm, "Surface")
+    pdf.drawString(7.0 * cm, y + 0.23 * cm, "Chauff.")
+    pdf.drawString(10.0 * cm, y + 0.23 * cm, "ECS")
+    pdf.drawString(12.6 * cm, y + 0.23 * cm, "Montant ECS")
+    pdf.drawString(16.2 * cm, y + 0.23 * cm, "Surface")
 
     y -= 0.7 * cm
     pdf.setFillColor(colors.black)
     pdf.setFont("Helvetica", 10)
-    for allocation in report.allocations:
-        pdf.drawString(2.2 * cm, y + 0.2 * cm, allocation.owner_name)
-        pdf.drawRightString(10.4 * cm, y + 0.2 * cm, f"{allocation.share_percent:.2f} %")
-        pdf.drawRightString(13.6 * cm, y + 0.2 * cm, f"{allocation.total_effort_score:.2f}")
-        pdf.drawRightString(17.6 * cm, y + 0.2 * cm, f"{allocation.tracked_surface_m2:.1f} m2")
+    for row in combined_rows:
+        pdf.drawString(2.2 * cm, y + 0.2 * cm, str(row["owner_name"]))
+        pdf.drawRightString(9.0 * cm, y + 0.2 * cm, f"{float(row['heating_share_percent']):.2f} %")
+        pdf.drawRightString(11.6 * cm, y + 0.2 * cm, f"{float(row['ecs_share_percent']):.2f} %")
+        pdf.drawRightString(15.8 * cm, y + 0.2 * cm, f"{float(row['ecs_allocated_amount']):.2f}")
+        pdf.drawRightString(17.6 * cm, y + 0.2 * cm, f"{float(row['tracked_surface_m2']):.1f} m2")
         y -= 0.65 * cm
 
     y -= 0.4 * cm
@@ -59,16 +67,49 @@ def build_monthly_pdf(report: MonthlyAllocationReport) -> bytes:
         pdf.drawString(2 * cm, y, line)
         y -= 0.45 * cm
         if y < 2.5 * cm:
-            pdf.showPage()
-            y = height - 2.5 * cm
-            pdf.setFont("Helvetica", 9)
+            y = _new_page(pdf, height)
 
     pdf.save()
     return buffer.getvalue()
 
 
-def save_monthly_pdf(report: MonthlyAllocationReport, output_path: Path) -> Path:
+def build_combined_allocation_rows(report: MonthlyAllocationReport, ecs_allocation: EcsAllocationRun | None = None) -> list[dict[str, object]]:
+    heating_index = {allocation.owner_name.lower(): allocation for allocation in report.allocations}
+    ecs_index = {}
+    if ecs_allocation is not None:
+        ecs_index = {item.owner_name.lower(): item for item in ecs_allocation.allocations}
+
+    owner_names = sorted(set(heating_index) | set(ecs_index))
+    rows: list[dict[str, object]] = []
+    for owner_name in owner_names:
+        allocation = heating_index.get(owner_name)
+        ecs_line = ecs_index.get(owner_name)
+        display_name = allocation.owner_name if allocation is not None else ecs_line.owner_name
+        rows.append(
+            {
+                "owner_name": display_name,
+                "heating_share_percent": (allocation.share_percent if allocation else 0.0),
+                "heating_score": (allocation.total_effort_score if allocation else 0.0),
+                "tracked_surface_m2": (allocation.tracked_surface_m2 if allocation else 0.0),
+                "ecs_share_percent": (ecs_line.share_percent if ecs_line else 0.0),
+                "ecs_allocated_amount": (ecs_line.allocated_amount if ecs_line else 0.0),
+                "ecs_delta_m3": (ecs_line.delta_m3 if ecs_line else 0.0),
+            }
+        )
+    return rows
+
+def _new_page(pdf: canvas.Canvas, height: float) -> float:
+    pdf.showPage()
+    pdf.setFont("Helvetica", 9)
+    return height - 2.5 * cm
+
+
+def save_monthly_pdf(
+    report: MonthlyAllocationReport,
+    output_path: Path,
+    ecs_allocation: EcsAllocationRun | None = None,
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(build_monthly_pdf(report))
+    output_path.write_bytes(build_monthly_pdf(report, ecs_allocation=ecs_allocation))
     upsert_archive_record(report, output_path)
     return output_path

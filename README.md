@@ -31,6 +31,7 @@ Sur un mois, on somme l'effort de toutes les tetes d'une personne, puis on norma
 - API FastAPI
 - page web de suivi mensuel
 - ecran d'administration pour gerer occupants, tetes et surfaces
+- page de test de calculs pour rejouer des scenarios de chauffe via une interface dediee
 - generation de rapport PDF mensuel
 - planification mensuelle automatique de generation PDF
 - authentification simple par session sur l'administration
@@ -42,6 +43,16 @@ Sur un mois, on somme l'effort de toutes les tetes d'une personne, puis on norma
 - panneau de telemetrie TRV26 avec batterie, running state, preset, error status et duty cycle
 - alerte mail quand une batterie descend sous le seuil configure
 - tests unitaires du modele de calcul et des integrations principales
+
+## Documentation Markdown
+
+Une documentation detaillee est disponible dans `docs/`:
+
+- `docs/README.md` : point d'entree de la documentation
+- `docs/API.md` : endpoints HTML, JSON, PDF et actions admin
+- `docs/ARCHITECTURE.md` : architecture applicative et flux de donnees
+- `docs/EXPLOITATION.md` : installation, configuration et exploitation
+- `docs/TEST_CALCULS.md` : mode de simulation de scenarios de chauffe
 
 ## Demarrage
 
@@ -234,6 +245,17 @@ L'ecran `/admin` permet de:
 - filtrer les archives par plage de mois et par occupant
 - renommer ou supprimer une archive existante
 - exporter un lot d'archives en ZIP
+
+## Test De Calculs
+
+La page `/test-calculs` est reservee a la session admin et permet de verifier le moteur de repartition sur des scenarios controles.
+
+Elle permet de:
+
+- charger des presets de chauffe typiques
+- modifier manuellement toutes les valeurs par zone
+- executer un calcul sans toucher aux mesures reelles, a l'ECS ou aux archives
+- visualiser la repartition finale et le detail du score par zone
 
 Les fichiers de configuration metier sont stockes dans `data/admin_state.json`. Les PDF archives sont ecrits dans `generated_reports/`.
 

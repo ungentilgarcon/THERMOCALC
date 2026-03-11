@@ -234,6 +234,10 @@ small {
   margin-top: 24px;
 }
 
+.ecs-layout {
+  grid-template-columns: 1fr 1fr;
+}
+
 .stack {
   display: grid;
   gap: 24px;
@@ -294,6 +298,26 @@ small {
 .admin-list {
   display: grid;
   gap: 12px;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.scenario-card {
+  min-height: 110px;
+}
+
+.scenario-card-active {
+  border-color: rgba(23, 50, 77, 0.28);
+  background: rgba(23, 50, 77, 0.08);
+}
+
+.test-actions {
+  margin-top: 18px;
 }
 
 .telemetry-list {
@@ -496,5 +520,9 @@ th {
   td {
     border-bottom: 0;
     padding: 6px 0;
+  }
+
+  table {
+    overflow-x: auto;
   }
 }

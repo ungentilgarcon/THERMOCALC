@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.core.config import GENERATED_REPORTS_DIR, SCHEDULER_POLL_SECONDS
 from app.models.schemas import MonthlyAllocationReport, PdfScheduleConfig
-from app.services.admin_state import load_admin_state, mark_report_generated
+from app.services.admin_state import load_admin_state, mark_report_generated, select_ecs_allocation_for_period
 from app.services.reporting import save_monthly_pdf
 from app.services.runtime_measurements import sync_runtime_subscriptions
 from app.services.zigbee2mqtt import refresh_due_controllers
@@ -33,7 +33,8 @@ def run_scheduled_generation_once(report: MonthlyAllocationReport, force: bool =
         now = datetime.now()
         if not should_generate_report(now, state.schedule, report.month_label):
             raise RuntimeError("Report generation is not due yet")
-    output_file = save_monthly_pdf(report, destination)
+    ecs_allocation = select_ecs_allocation_for_period(state, report.month_label)
+    output_file = save_monthly_pdf(report, destination, ecs_allocation=ecs_allocation)
     mark_report_generated(report.month_label)
     return output_file
 

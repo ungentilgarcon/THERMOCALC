@@ -113,6 +113,32 @@ class PdfScheduleConfig(BaseModel):
     last_generated_month: str | None = None
 
 
+class EcsMeterReading(BaseModel):
+    owner_name: str = Field(min_length=1)
+    last_index_m3: float = Field(ge=0)
+    previous_index_m3: float | None = Field(default=None, ge=0)
+    last_delta_m3: float = Field(default=0, ge=0)
+    updated_at: datetime | None = None
+
+
+class EcsAllocationLine(BaseModel):
+    owner_name: str
+    previous_index_m3: float | None = None
+    current_index_m3: float = Field(ge=0)
+    delta_m3: float = Field(ge=0)
+    share_percent: float = Field(ge=0, le=100)
+    allocated_amount: float = Field(ge=0)
+
+
+class EcsAllocationRun(BaseModel):
+    period_label: str = ""
+    amount_label: str = "EUR"
+    total_amount: float = Field(ge=0)
+    total_consumption_m3: float = Field(ge=0)
+    calculated_at: datetime
+    allocations: list[EcsAllocationLine] = Field(default_factory=list)
+
+
 class AdminState(BaseModel):
     occupants: list[Occupant] = Field(default_factory=list)
     thermostats: list[ThermostatAssignment] = Field(default_factory=list)
@@ -120,6 +146,9 @@ class AdminState(BaseModel):
     controllers: list[ZigbeeController] = Field(default_factory=list)
     zigbee_devices: list[ZigbeeEndpoint] = Field(default_factory=list)
     zigbee_pairings: list[ZigbeePairingLink] = Field(default_factory=list)
+    ecs_readings: list[EcsMeterReading] = Field(default_factory=list)
+    last_ecs_allocation: EcsAllocationRun | None = None
+    ecs_allocation_history: list[EcsAllocationRun] = Field(default_factory=list)
 
 
 class ArchiveAllocationSnapshot(BaseModel):

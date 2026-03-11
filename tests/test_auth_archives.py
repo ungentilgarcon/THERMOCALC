@@ -30,6 +30,24 @@ def test_admin_login_required(monkeypatch) -> None:
         assert success.headers["location"].startswith("/admin")
 
 
+def test_admin_page_renders_after_login(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(auth, "ADMIN_PASSWORD", "secret")
+
+    with TestClient(app) as client:
+        login = client.post(
+            "/admin/login",
+            data={"username": "admin", "password": "secret"},
+            follow_redirects=False,
+        )
+        assert login.status_code == 303
+
+        response = client.get("/admin")
+
+    assert response.status_code == 200
+    assert "Administration" in response.text
+
+
 def test_archive_filters_match_expected_owner_and_month() -> None:
     record = ArchiveRecord(
         filename="thermocalc-2026-03.pdf",
@@ -75,3 +93,55 @@ def test_dashboard_shows_payload_source_indicator(monkeypatch) -> None:
     assert response.status_code == 200
     assert "MQTT temps reel" in response.text
     assert "dernieres mesures TRV26" in response.text
+
+
+def test_ecs_page_requires_admin_login() -> None:
+    with TestClient(app) as client:
+        response = client.get("/ecs", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login"
+
+
+def test_test_calculations_page_requires_admin_login() -> None:
+    with TestClient(app) as client:
+        response = client.get("/test-calculs", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login"
+
+
+def test_test_calculations_page_runs_manual_scenario(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(auth, "ADMIN_PASSWORD", "secret")
+
+    with TestClient(app) as client:
+        login = client.post(
+            "/admin/login",
+            data={"username": "admin", "password": "secret"},
+            follow_redirects=False,
+        )
+        assert login.status_code == 303
+
+        response = client.post(
+            "/test-calculs",
+            data={
+                "scenario": "manual",
+                "month_label": "Scenario validation",
+                "trv_id": ["trv-a", "trv-b"],
+                "owner_name": ["Alice", "Benoit"],
+                "zone_label": ["Salon", "Bureau"],
+                "surface_m2": ["20", "12"],
+                "target_temperature_c": ["21", "20"],
+                "current_temperature_c": ["19", "19.5"],
+                "valve_open_percent": ["60", "30"],
+                "running_state": ["heat", "idle"],
+                "duty_cycle_percent": ["70", "15"],
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Scenario calcule en mode test" in response.text
+    assert "Scenario validation" in response.text
+    assert "Alice" in response.text
+    assert "Benoit" in response.text

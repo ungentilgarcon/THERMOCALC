@@ -1,10 +1,14 @@
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 
 from app.core.config import ADMIN_STATE_PATH, GENERATED_REPORTS_DIR
 from app.models.schemas import (
     AdminState,
     AllocationInput,
+    EcsAllocationLine,
+    EcsAllocationRun,
+    EcsMeterReading,
     Occupant,
     PdfScheduleConfig,
     ThermostatAssignment,
@@ -12,6 +16,9 @@ from app.models.schemas import (
     ZigbeeEndpoint,
     ZigbeePairingLink,
 )
+
+
+MAX_ECS_ALLOCATION_HISTORY = 36
 
 
 
@@ -33,6 +40,7 @@ def load_admin_state() -> AdminState:
 
 def save_admin_state(state: AdminState) -> AdminState:
     state = sync_thermostat_assignments(state)
+    state = ensure_ecs_readings_for_occupants(state)
     ADMIN_STATE_PATH.write_text(state.model_dump_json(indent=2), encoding="utf-8")
     return state
 
@@ -55,6 +63,19 @@ def remove_occupant(owner_name: str) -> AdminState:
     state = load_admin_state()
     state.occupants = [item for item in state.occupants if item.owner_name.lower() != normalized_name]
     state.thermostats = [item for item in state.thermostats if item.owner_name.lower() != normalized_name]
+    state.ecs_readings = [item for item in state.ecs_readings if item.owner_name.lower() != normalized_name]
+    if state.last_ecs_allocation is not None:
+        state.last_ecs_allocation.allocations = [
+            item for item in state.last_ecs_allocation.allocations if item.owner_name.lower() != normalized_name
+        ]
+    state.ecs_allocation_history = [
+        run.model_copy(
+            update={
+                "allocations": [item for item in run.allocations if item.owner_name.lower() != normalized_name]
+            }
+        )
+        for run in state.ecs_allocation_history
+    ]
     return save_admin_state(state)
 
 
@@ -333,6 +354,104 @@ def apply_assignments_to_payload(payload: AllocationInput, state: AdminState) ->
             )
         )
     return payload.model_copy(update={"samples": remapped_samples})
+
+
+def ensure_ecs_readings_for_occupants(state: AdminState) -> AdminState:
+    existing = {item.owner_name.lower(): item for item in state.ecs_readings}
+    for occupant in state.occupants:
+        if occupant.owner_name.lower() not in existing:
+            state.ecs_readings.append(
+                EcsMeterReading(
+                    owner_name=occupant.owner_name,
+                    last_index_m3=0.0,
+                    previous_index_m3=None,
+                    last_delta_m3=0.0,
+                    updated_at=None,
+                )
+            )
+    state.ecs_readings.sort(key=lambda item: item.owner_name.lower())
+    return state
+
+
+def build_ecs_readings_map(state: AdminState) -> dict[str, EcsMeterReading]:
+    ensured = ensure_ecs_readings_for_occupants(state)
+    return {item.owner_name.lower(): item for item in ensured.ecs_readings}
+
+
+def update_ecs_readings_and_allocate(
+    current_indexes_m3: dict[str, float],
+    total_amount: float,
+    amount_label: str = "EUR",
+    period_label: str = "",
+) -> AdminState:
+    state = load_admin_state()
+    state = ensure_ecs_readings_for_occupants(state)
+    readings_map = build_ecs_readings_map(state)
+    allocations: list[EcsAllocationLine] = []
+    total_consumption_m3 = 0.0
+    now = datetime.now(timezone.utc)
+
+    for owner_name, current_index in current_indexes_m3.items():
+        reading = readings_map.get(owner_name.strip().lower())
+        if reading is None:
+            continue
+        previous_index = reading.last_index_m3 if reading.updated_at is not None else None
+        if previous_index is not None and current_index < previous_index:
+            raise ValueError(f"Index ECS inferieur au precedent pour {reading.owner_name}")
+        delta_m3 = 0.0 if previous_index is None else current_index - previous_index
+        total_consumption_m3 += delta_m3
+        allocations.append(
+            EcsAllocationLine(
+                owner_name=reading.owner_name,
+                previous_index_m3=previous_index,
+                current_index_m3=current_index,
+                delta_m3=round(delta_m3, 3),
+                share_percent=0,
+                allocated_amount=0,
+            )
+        )
+        readings_map[reading.owner_name.lower()] = EcsMeterReading(
+            owner_name=reading.owner_name,
+            last_index_m3=current_index,
+            previous_index_m3=previous_index,
+            last_delta_m3=round(delta_m3, 3),
+            updated_at=now,
+        )
+
+    normalized_total = max(total_amount, 0.0)
+    for index, allocation in enumerate(allocations):
+        share_percent = 0.0 if total_consumption_m3 == 0 else (allocation.delta_m3 / total_consumption_m3) * 100.0
+        allocated_amount = 0.0 if total_consumption_m3 == 0 else (allocation.delta_m3 / total_consumption_m3) * normalized_total
+        allocations[index] = allocation.model_copy(
+            update={
+                "share_percent": round(share_percent, 2),
+                "allocated_amount": round(allocated_amount, 2),
+            }
+        )
+
+    state.ecs_readings = sorted(readings_map.values(), key=lambda item: item.owner_name.lower())
+    run = EcsAllocationRun(
+        period_label=period_label.strip(),
+        amount_label=amount_label.strip() or "EUR",
+        total_amount=round(normalized_total, 2),
+        total_consumption_m3=round(total_consumption_m3, 3),
+        calculated_at=now,
+        allocations=allocations,
+    )
+    state.last_ecs_allocation = run
+    state.ecs_allocation_history = [run, *state.ecs_allocation_history][:MAX_ECS_ALLOCATION_HISTORY]
+    return save_admin_state(state)
+
+
+def select_ecs_allocation_for_period(state: AdminState, period_hint: str = "") -> EcsAllocationRun | None:
+    if not state.ecs_allocation_history:
+        return state.last_ecs_allocation
+    normalized_hint = period_hint.strip().lower()
+    if normalized_hint:
+        for run in state.ecs_allocation_history:
+            if normalized_hint in run.period_label.lower():
+                return run
+    return state.ecs_allocation_history[0]
 
 
 

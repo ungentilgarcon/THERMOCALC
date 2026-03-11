@@ -29,12 +29,15 @@ from app.services.admin_state import (
     add_or_update_zigbee_pairing,
     add_occupant,
     apply_assignments_to_payload,
+    ensure_ecs_readings_for_occupants,
     load_admin_state,
     remove_controller,
     remove_occupant,
     remove_thermostat,
     remove_zigbee_device,
     remove_zigbee_pairing,
+    select_ecs_allocation_for_period,
+    update_ecs_readings_and_allocate,
     update_schedule,
 )
 from app.services.auth import ensure_admin, is_admin_authenticated, login_admin, logout_admin
@@ -42,6 +45,7 @@ from app.services.consumption import build_monthly_allocation
 from app.services.reporting import build_monthly_pdf
 from app.services.runtime_measurements import build_realtime_payload, build_trv26_telemetry
 from app.services.scheduler import run_scheduled_generation_once
+from app.services.test_scenarios import build_empty_payload, build_rows, build_test_payload, list_test_scenarios
 from app.services.zigbee import (
     build_zigbee_overview,
     list_device_role_options,
@@ -93,6 +97,15 @@ def admin_redirect(notice: str) -> RedirectResponse:
 
 def admin_login_redirect() -> RedirectResponse:
     return RedirectResponse(url="/admin/login", status_code=303)
+
+
+def ecs_redirect(notice: str) -> RedirectResponse:
+    return RedirectResponse(url=f"/ecs?notice={quote_plus(notice)}", status_code=303)
+
+
+def test_calculations_redirect(notice: str = "") -> RedirectResponse:
+    suffix = f"?notice={quote_plus(notice)}" if notice else ""
+    return RedirectResponse(url=f"/test-calculs{suffix}", status_code=303)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -158,6 +171,54 @@ def admin_page(
                 "discovery_interval_minutes": DEFAULT_DISCOVERY_INTERVAL_MINUTES,
                 "permit_join_seconds": DEFAULT_PERMIT_JOIN_SECONDS,
             },
+        },
+    )
+
+
+@router.get("/ecs", response_class=HTMLResponse)
+def ecs_page(request: Request, notice: str = "") -> Response:
+    if not is_admin_authenticated(request):
+        return admin_login_redirect()
+    admin_state = ensure_ecs_readings_for_occupants(load_admin_state())
+    return templates.TemplateResponse(
+        request=request,
+        name="ecs.html",
+        context={
+            "notice": notice,
+            "admin_state": admin_state,
+            "ecs_readings": admin_state.ecs_readings,
+            "last_ecs_allocation": admin_state.last_ecs_allocation,
+            "ecs_allocation_history": admin_state.ecs_allocation_history,
+        },
+    )
+
+
+@router.get("/test-calculs", response_class=HTMLResponse)
+def test_calculations_page(
+    request: Request,
+    notice: str = "",
+    scenario: str = Query(default="balanced"),
+    rows: int = Query(default=4),
+) -> Response:
+    if not is_admin_authenticated(request):
+        return admin_login_redirect()
+    available_scenarios = list_test_scenarios()
+    scenario_keys = {item["key"] for item in available_scenarios}
+    if scenario == "manual":
+        payload = build_empty_payload(rows)
+    else:
+        payload = build_test_payload(scenario if scenario in scenario_keys else "balanced")
+    return templates.TemplateResponse(
+        request=request,
+        name="test_calculs.html",
+        context={
+            "notice": notice,
+            "selected_scenario": scenario if scenario in scenario_keys or scenario == "manual" else "balanced",
+            "scenario_options": available_scenarios,
+            "rows": build_rows(payload),
+            "month_label": payload.month_label,
+            "row_count": len(payload.samples),
+            "report": None,
         },
     )
 
@@ -481,6 +542,120 @@ def generate_pdf_now(request: Request) -> RedirectResponse:
     return admin_redirect(f"PDF genere: {output_file.name}")
 
 
+@router.post("/test-calculs")
+async def run_test_calculations(request: Request) -> Response:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    form = await request.form()
+    month_label = str(form.get("month_label", "Scenario manuel")).strip() or "Scenario manuel"
+    scenario = str(form.get("scenario", "manual")).strip() or "manual"
+    trv_ids = form.getlist("trv_id")
+    zone_labels = form.getlist("zone_label")
+    owner_names = form.getlist("owner_name")
+    surface_values = form.getlist("surface_m2")
+    target_values = form.getlist("target_temperature_c")
+    current_values = form.getlist("current_temperature_c")
+    valve_values = form.getlist("valve_open_percent")
+    running_states = form.getlist("running_state")
+    duty_values = form.getlist("duty_cycle_percent")
+
+    samples = []
+    row_total = max(
+        len(trv_ids),
+        len(zone_labels),
+        len(owner_names),
+        len(surface_values),
+        len(target_values),
+        len(current_values),
+        len(valve_values),
+        len(running_states),
+        len(duty_values),
+    )
+    for index in range(row_total):
+        trv_id = str(trv_ids[index] if index < len(trv_ids) else "").strip()
+        zone_label = str(zone_labels[index] if index < len(zone_labels) else "").strip()
+        owner_name = str(owner_names[index] if index < len(owner_names) else "").strip()
+        if not any([trv_id, zone_label, owner_name]):
+            continue
+        try:
+            surface_m2 = float(surface_values[index])
+            target_temperature_c = float(target_values[index])
+            current_temperature_c = float(current_values[index])
+            valve_open_percent = float(valve_values[index])
+            duty_value = str(duty_values[index] if index < len(duty_values) else "").strip()
+            duty_cycle_percent = float(duty_value) if duty_value else None
+        except (TypeError, ValueError):
+            return test_calculations_redirect("Valeurs numeriques invalides dans le scenario de test")
+        samples.append(
+            {
+                "trv_id": trv_id or f"scenario-{index + 1}",
+                "zone_label": zone_label or f"Zone {index + 1}",
+                "owner_name": owner_name or f"Occupant {index + 1}",
+                "surface_m2": surface_m2,
+                "target_temperature_c": target_temperature_c,
+                "current_temperature_c": current_temperature_c,
+                "valve_open_percent": valve_open_percent,
+                "running_state": str(running_states[index] if index < len(running_states) else "unknown").strip(),
+                "duty_cycle_percent": duty_cycle_percent,
+                "captured_at": "2026-03-11T08:00:00Z",
+            }
+        )
+
+    if not samples:
+        return test_calculations_redirect("Ajoute au moins une ligne de chauffe pour lancer le test")
+
+    payload = AllocationInput.model_validate({"month_label": month_label, "samples": samples})
+    report = build_monthly_allocation(payload)
+    return templates.TemplateResponse(
+        request=request,
+        name="test_calculs.html",
+        context={
+            "notice": "Scenario calcule en mode test. Aucun etat persistant n'a ete modifie.",
+            "selected_scenario": scenario,
+            "scenario_options": list_test_scenarios(),
+            "rows": build_rows(payload),
+            "month_label": payload.month_label,
+            "row_count": len(payload.samples),
+            "report": report,
+        },
+    )
+
+
+@router.post("/ecs/calculate")
+async def ecs_calculate(
+    request: Request,
+    total_amount: float = Form(...),
+    amount_label: str = Form(default="EUR"),
+    period_label: str = Form(default=""),
+) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    form = await request.form()
+    current_indexes: dict[str, float] = {}
+    for key, value in form.multi_items():
+        if not key.startswith("ecs_index__"):
+            continue
+        owner_name = key.removeprefix("ecs_index__").strip()
+        if not owner_name:
+            continue
+        try:
+            current_indexes[owner_name] = float(value)
+        except (TypeError, ValueError):
+            return ecs_redirect(f"Index ECS invalide pour {owner_name}")
+    try:
+        update_ecs_readings_and_allocate(
+            current_indexes_m3=current_indexes,
+            total_amount=total_amount,
+            amount_label=amount_label,
+            period_label=period_label,
+        )
+    except ValueError as exc:
+        return ecs_redirect(str(exc))
+    return ecs_redirect("Repartition ECS calculee et index memorises")
+
+
 @router.post("/admin/archives/rename")
 def rename_archive_action(
     request: Request,
@@ -532,7 +707,8 @@ def report_json() -> dict:
 @router.get("/reports/monthly.pdf")
 def monthly_pdf() -> Response:
     report = build_monthly_allocation(load_sample_payload())
-    pdf_bytes = build_monthly_pdf(report)
+    ecs_allocation = select_ecs_allocation_for_period(load_admin_state(), report.month_label)
+    pdf_bytes = build_monthly_pdf(report, ecs_allocation=ecs_allocation)
     headers = {"Content-Disposition": f'inline; filename="thermocalc-{report.month_label}.pdf"'}
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 

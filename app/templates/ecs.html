@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div>
+    <p class="eyebrow">ECS</p>
+    <h1>Repartition d'un montant sur les index ECS</h1>
+    <p class="hero-copy">
+      Saisit le nouvel index de chaque occupant, calcule le delta depuis le releve precedent et repartit un montant total de fioul ou de prix proportionnellement a la consommation d'eau chaude sanitaire.
+    </p>
+    {% if notice %}
+    <p class="notice">{{ notice }}</p>
+    {% endif %}
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" href="/admin">Retour a l'administration</a>
+    <a class="button secondary" href="/">Retour au suivi</a>
+  </div>
+</header>
+
+<section class="admin-layout ecs-layout">
+  <div class="stack">
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Saisie ECS</p>
+          <h2>Nouveaux indexes par occupant</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/ecs/calculate">
+        <div class="field">
+          <label for="period_label">Periode</label>
+          <input id="period_label" name="period_label" placeholder="Mars 2026" />
+        </div>
+        <div class="field">
+          <label for="total_amount">Montant total a repartir</label>
+          <input id="total_amount" name="total_amount" type="number" min="0" step="0.01" required />
+        </div>
+        <div class="field full">
+          <label for="amount_label">Libelle du montant</label>
+          <input id="amount_label" name="amount_label" value="EUR" placeholder="EUR, L fioul, CHF..." />
+        </div>
+        {% for reading in ecs_readings %}
+        <div class="field">
+          <label for="ecs_index__{{ loop.index }}">{{ reading.owner_name }}</label>
+          <input
+            id="ecs_index__{{ loop.index }}"
+            name="ecs_index__{{ reading.owner_name }}"
+            type="number"
+            min="0"
+            step="0.001"
+            value="{{ reading.last_index_m3 }}"
+            required
+          />
+          <small>
+            Precedent: {{ reading.last_index_m3 }} m3
+            {% if reading.updated_at %} · releve {{ reading.updated_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+          </small>
+        </div>
+        {% endfor %}
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Calculer et memoriser</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Dernier calcul</p>
+          <h2>Repartition ECS</h2>
+        </div>
+      </div>
+      {% if last_ecs_allocation %}
+      <div class="admin-list">
+        <article class="list-item">
+          <strong>{{ last_ecs_allocation.period_label or 'Periode libre' }}</strong>
+          <small>
+            Montant total: {{ last_ecs_allocation.total_amount }} {{ last_ecs_allocation.amount_label }} ·
+            Volume total: {{ last_ecs_allocation.total_consumption_m3 }} m3 ·
+            Calcule le {{ last_ecs_allocation.calculated_at.strftime('%Y-%m-%d %H:%M') }}
+          </small>
+        </article>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Occupant</th>
+            <th>Index precedent</th>
+            <th>Index courant</th>
+            <th>Delta</th>
+            <th>Part</th>
+            <th>Montant</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in last_ecs_allocation.allocations %}
+          <tr>
+            <td>{{ line.owner_name }}</td>
+            <td>{% if line.previous_index_m3 is not none %}{{ line.previous_index_m3 }} m3{% else %}n/a{% endif %}</td>
+            <td>{{ line.current_index_m3 }} m3</td>
+            <td>{{ line.delta_m3 }} m3</td>
+            <td>{{ line.share_percent }}%</td>
+            <td>{{ line.allocated_amount }} {{ last_ecs_allocation.amount_label }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <article class="list-item">
+        <strong>Aucun calcul ECS</strong>
+        <small>Le premier releve initialise les index. Le delta utile apparaitra au calcul suivant.</small>
+      </article>
+      {% endif %}
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Historique ECS</p>
+          <h2>Calculs precedents</h2>
+        </div>
+      </div>
+      <div class="admin-list">
+        {% for run in ecs_allocation_history %}
+        <article class="list-item">
+          <strong>{{ run.period_label or 'Periode libre' }}</strong>
+          <span>{{ run.total_amount }} {{ run.amount_label }} · {{ run.total_consumption_m3 }} m3</span>
+          <small>Calcule le {{ run.calculated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+          <small>
+            {% for line in run.allocations %}
+            {{ line.owner_name }}: {{ line.delta_m3 }} m3 / {{ line.allocated_amount }} {{ run.amount_label }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </small>
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucun historique ECS</strong>
+          <small>Les calculs ECS memorises apparaitront ici au fil des releves.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}
