@@ -1,0 +1,55 @@
+{
+  "month_label": "2026-03",
+  "samples": [
+    {
+      "trv_id": "trv26-salon-1",
+      "zone_label": "Salon nord",
+      "owner_name": "Alice",
+      "surface_m2": 24.0,
+      "target_temperature_c": 21.0,
+      "current_temperature_c": 19.0,
+      "valve_open_percent": 78.0,
+      "captured_at": "2026-03-01T08:15:00Z"
+    },
+    {
+      "trv_id": "trv26-bureau-1",
+      "zone_label": "Bureau",
+      "owner_name": "Alice",
+      "surface_m2": 13.0,
+      "target_temperature_c": 20.0,
+      "current_temperature_c": 18.6,
+      "valve_open_percent": 64.0,
+      "captured_at": "2026-03-01T08:15:00Z"
+    },
+    {
+      "trv_id": "trv26-chambre-1",
+      "zone_label": "Chambre est",
+      "owner_name": "Benoit",
+      "surface_m2": 16.5,
+      "target_temperature_c": 19.0,
+      "current_temperature_c": 17.2,
+      "valve_open_percent": 70.0,
+      "captured_at": "2026-03-01T08:15:00Z"
+    },
+    {
+      "trv_id": "trv26-chambre-2",
+      "zone_label": "Chambre ouest",
+      "owner_name": "Benoit",
+      "surface_m2": 11.0,
+      "target_temperature_c": 18.0,
+      "current_temperature_c": 17.5,
+      "valve_open_percent": 40.0,
+      "captured_at": "2026-03-01T08:15:00Z"
+    },
+    {
+      "trv_id": "trv26-studio-1",
+      "zone_label": "Studio",
+      "owner_name": "Claire",
+      "surface_m2": 28.0,
+      "target_temperature_c": 22.0,
+      "current_temperature_c": 19.1,
+      "valve_open_percent": 92.0,
+      "captured_at": "2026-03-01T08:15:00Z"
+    }
+  ]
+}

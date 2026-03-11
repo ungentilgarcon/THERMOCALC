@@ -1,0 +1,25 @@
+[admin]
+username = "admin"
+password = "thermocalc-admin"
+session_secret = "thermocalc-session-secret-change-me"
+
+[app]
+scheduler_poll_seconds = 60
+generated_reports_dir = "generated_reports"
+runtime_measurements_path = "runtime_measurements.json"
+realtime_mqtt_enabled = true
+sample_fallback_enabled = true
+realtime_measurement_max_age_minutes = 180
+
+[zigbee2mqtt.defaults]
+controller_id = "z2m-main"
+controller_label = "Zigbee2MQTT Principal"
+mqtt_url = "mqtt://localhost:1883"
+mqtt_username = ""
+mqtt_password = ""
+base_topic = "zigbee2mqtt"
+auto_discovery_enabled = true
+discovery_interval_minutes = 15
+permit_join_seconds = 60
+discovery_timeout_seconds = 8
+connectivity_timeout_seconds = 5

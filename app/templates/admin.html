@@ -1,0 +1,587 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div>
+    <p class="eyebrow">Administration</p>
+    <h1>Occupants, tetes et planning PDF</h1>
+    <p class="hero-copy">
+      Gere les affectations TRV26, les surfaces de chauffage et la generation archivee des rapports mensuels.
+    </p>
+    {% if notice %}
+    <p class="notice">{{ notice }}</p>
+    {% endif %}
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" href="/">Retour au suivi</a>
+    <form method="post" action="/admin/logout">
+      <button class="button secondary" type="submit">Se deconnecter</button>
+    </form>
+    <form method="post" action="/admin/reports/generate">
+      <button class="button secondary" type="submit">Generer le PDF maintenant</button>
+    </form>
+  </div>
+</header>
+
+<section class="admin-layout">
+  <div class="stack">
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Zigbee</p>
+          <h2>Controleurs multi-bridge</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/controllers">
+        <div class="field">
+          <label for="controller_id">Identifiant controleur</label>
+          <input id="controller_id" name="controller_id" value="{{ config_defaults.controller_id }}" required />
+        </div>
+        <div class="field">
+          <label for="controller_label">Nom affiche</label>
+          <input id="controller_label" name="label" value="{{ config_defaults.controller_label }}" required />
+        </div>
+        <div class="field">
+          <label for="provider_type">Provider</label>
+          <select id="provider_type" name="provider_type">
+            {% for provider in provider_options %}
+            <option value="{{ provider.value }}">{{ provider.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="endpoint_url">URL bridge</label>
+          <input id="endpoint_url" name="endpoint_url" value="{{ config_defaults.mqtt_url }}" placeholder="mqtt://broker:1883" />
+        </div>
+        <div class="field">
+          <label for="mqtt_username">Utilisateur MQTT</label>
+          <input id="mqtt_username" name="mqtt_username" value="{{ config_defaults.mqtt_username }}" />
+        </div>
+        <div class="field">
+          <label for="mqtt_password">Mot de passe MQTT</label>
+          <input id="mqtt_password" name="mqtt_password" type="password" value="{{ config_defaults.mqtt_password }}" />
+        </div>
+        <div class="field">
+          <label for="base_topic">Base topic</label>
+          <input id="base_topic" name="base_topic" value="{{ config_defaults.base_topic }}" />
+        </div>
+        <div class="field">
+          <label for="discovery_interval_minutes">Auto-discovery (minutes)</label>
+          <input id="discovery_interval_minutes" name="discovery_interval_minutes" type="number" min="1" max="1440" value="{{ config_defaults.discovery_interval_minutes }}" />
+        </div>
+        <div class="field full">
+          <label for="controller_notes">Notes</label>
+          <input id="controller_notes" name="notes" />
+        </div>
+        <div class="field full">
+          <label>
+            <input name="auto_discovery_enabled" type="checkbox" {% if config_defaults.auto_discovery_enabled %}checked{% endif %} />
+            Rafraichir automatiquement l'inventaire
+          </label>
+        </div>
+        <div class="field full">
+          <label>
+            <input name="enabled" type="checkbox" checked />
+            Controleur actif
+          </label>
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Enregistrer le controleur</button>
+        </div>
+      </form>
+      <div class="admin-list">
+        {% for item in zigbee_overview %}
+        <article class="list-item">
+          <strong>{{ item.controller.label }}</strong>
+          <span>{{ item.controller.controller_id }} · {{ item.controller.provider_type }}</span>
+          <small>{{ item.devices | length }} devices · {{ item.pairings | length }} liens</small>
+          {% if item.controller.endpoint_url %}
+          <small>{{ item.controller.endpoint_url }}</small>
+          {% endif %}
+          {% if item.controller.last_discovery_status %}
+          <small>{{ item.controller.last_discovery_status }}{% if item.controller.last_discovery_at %} · {{ item.controller.last_discovery_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</small>
+          {% endif %}
+          <small>Auto-discovery: {% if item.controller.auto_discovery_enabled %}toutes les {{ item.controller.discovery_interval_minutes }} min{% else %}desactivee{% endif %}</small>
+          <div class="inline-actions">
+            <form method="post" action="/admin/controllers/connectivity-test">
+              <input type="hidden" name="controller_id" value="{{ item.controller.controller_id }}" />
+              <button class="button secondary" type="submit">Tester la connectivite</button>
+            </form>
+            <form method="post" action="/admin/controllers/discover">
+              <input type="hidden" name="controller_id" value="{{ item.controller.controller_id }}" />
+              <button class="button secondary" type="submit">Discovery</button>
+            </form>
+            <form method="post" action="/admin/controllers/pairing-mode">
+              <input type="hidden" name="controller_id" value="{{ item.controller.controller_id }}" />
+              <input type="hidden" name="duration_seconds" value="60" />
+              <button class="button secondary" type="submit">Ouvrir l'appairage</button>
+            </form>
+            <form method="post" action="/admin/controllers/delete">
+              <input type="hidden" name="controller_id" value="{{ item.controller.controller_id }}" />
+              <button class="button secondary" type="submit">Supprimer</button>
+            </form>
+          </div>
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucun controleur Zigbee</strong>
+          <small>Ajoute un ou plusieurs bridges pour separer detecteurs, tetes et recepteurs.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Appairage guide</p>
+          <h2>Nouvelle tete thermostatique</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/controllers/pair-new-thermostat">
+        <div class="field">
+          <label for="pair_controller_id">Controleur</label>
+          <input id="pair_controller_id" name="controller_id" list="controllers" value="{{ config_defaults.controller_id }}" required />
+        </div>
+        <div class="field">
+          <label for="pair_duration_seconds">Duree permit_join</label>
+          <input id="pair_duration_seconds" name="duration_seconds" type="number" min="10" max="600" value="{{ config_defaults.permit_join_seconds }}" required />
+        </div>
+        <div class="field">
+          <label for="expected_device_id">Device ID attendu</label>
+          <input id="expected_device_id" name="expected_device_id" placeholder="trv26-salon-2" />
+        </div>
+        <div class="field">
+          <label for="pair_friendly_name">Nom lisible</label>
+          <input id="pair_friendly_name" name="friendly_name" placeholder="TRV salon 2" />
+        </div>
+        <div class="field">
+          <label for="pair_owner_name">Occupant</label>
+          <input id="pair_owner_name" name="owner_name" list="occupants" />
+        </div>
+        <div class="field">
+          <label for="pair_zone_label">Zone</label>
+          <input id="pair_zone_label" name="zone_label" />
+        </div>
+        <div class="field">
+          <label for="pair_surface_m2">Surface m2</label>
+          <input id="pair_surface_m2" name="surface_m2" type="number" min="0.1" step="0.1" />
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Appairer une nouvelle tete</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Occupants</p>
+          <h2>Gestion des personnes</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/occupants">
+        <div class="field">
+          <label for="owner_name">Nom</label>
+          <input id="owner_name" name="owner_name" required />
+        </div>
+        <div class="field">
+          <label for="notes">Notes</label>
+          <input id="notes" name="notes" />
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Enregistrer l'occupant</button>
+        </div>
+      </form>
+      <div class="admin-list">
+        {% for occupant in admin_state.occupants %}
+        <article class="list-item">
+          <strong>{{ occupant.owner_name }}</strong>
+          <small>{{ occupant.notes or "Aucune note" }}</small>
+          <form class="inline-actions" method="post" action="/admin/occupants/delete">
+            <input type="hidden" name="owner_name" value="{{ occupant.owner_name }}" />
+            <button class="button secondary" type="submit">Supprimer</button>
+          </form>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Tetes TRV26</p>
+          <h2>Affectations et surfaces</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/thermostats">
+        <div class="field">
+          <label for="trv_id">Identifiant tete</label>
+          <input id="trv_id" name="trv_id" required />
+        </div>
+        <div class="field">
+          <label for="zone_label">Zone</label>
+          <input id="zone_label" name="zone_label" required />
+        </div>
+        <div class="field">
+          <label for="thermostat_owner_name">Occupant</label>
+          <input id="thermostat_owner_name" name="owner_name" list="occupants" required />
+          <datalist id="occupants">
+            {% for occupant in admin_state.occupants %}
+            <option value="{{ occupant.owner_name }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="surface_m2">Surface m2</label>
+          <input id="surface_m2" name="surface_m2" type="number" min="0.1" step="0.1" required />
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Enregistrer la tete</button>
+        </div>
+      </form>
+      <div class="admin-list">
+        {% for thermostat in admin_state.thermostats %}
+        <article class="list-item">
+          <strong>{{ thermostat.trv_id }}</strong>
+          <span>{{ thermostat.zone_label }} · {{ thermostat.owner_name }}</span>
+          <small>{{ thermostat.surface_m2 }} m2 suivis</small>
+          <form class="inline-actions" method="post" action="/admin/thermostats/delete">
+            <input type="hidden" name="trv_id" value="{{ thermostat.trv_id }}" />
+            <button class="button secondary" type="submit">Supprimer</button>
+          </form>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Inventaire Zigbee</p>
+          <h2>Detecteurs, tetes et recepteurs</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/zigbee/devices">
+        <div class="field">
+          <label for="device_id">Identifiant device</label>
+          <input id="device_id" name="device_id" required />
+        </div>
+        <div class="field">
+          <label for="device_controller_id">Controleur</label>
+          <input id="device_controller_id" name="controller_id" list="controllers" required />
+          <datalist id="controllers">
+            {% for controller in admin_state.controllers %}
+            <option value="{{ controller.controller_id }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="role">Role</label>
+          <select id="role" name="role">
+            {% for role in device_role_options %}
+            <option value="{{ role.value }}">{{ role.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="friendly_name">Nom lisible</label>
+          <input id="friendly_name" name="friendly_name" required />
+        </div>
+        <div class="field">
+          <label for="model">Modele</label>
+          <input id="model" name="model" placeholder="TRV26" />
+        </div>
+        <div class="field">
+          <label for="ieee_address">Adresse IEEE</label>
+          <input id="ieee_address" name="ieee_address" placeholder="0x00124b..." />
+        </div>
+        <div class="field">
+          <label for="zigbee_owner_name">Occupant</label>
+          <input id="zigbee_owner_name" name="owner_name" list="occupants" />
+        </div>
+        <div class="field">
+          <label for="zigbee_zone_label">Zone</label>
+          <input id="zigbee_zone_label" name="zone_label" />
+        </div>
+        <div class="field">
+          <label for="zigbee_surface_m2">Surface m2</label>
+          <input id="zigbee_surface_m2" name="surface_m2" type="number" min="0.1" step="0.1" />
+        </div>
+        <div class="field full">
+          <label>
+            <input name="enabled" type="checkbox" checked />
+            Device actif
+          </label>
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Enregistrer le device</button>
+        </div>
+      </form>
+      <div class="admin-list">
+        {% for device in admin_state.zigbee_devices %}
+        <article class="list-item">
+          <strong>{{ device.friendly_name }}</strong>
+          <span>{{ device.device_id }} · {{ device.role }} · {{ device.controller_id }}</span>
+          <small>{{ device.model or "Modele non renseigne" }}{% if device.zone_label %} · {{ device.zone_label }}{% endif %}{% if device.owner_name %} · {{ device.owner_name }}{% endif %}{% if device.surface_m2 %} · {{ device.surface_m2 }} m2{% endif %}</small>
+          <form class="inline-actions" method="post" action="/admin/zigbee/devices/delete">
+            <input type="hidden" name="device_id" value="{{ device.device_id }}" />
+            <button class="button secondary" type="submit">Supprimer</button>
+          </form>
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucun device Zigbee</strong>
+          <small>Ajoute des detecteurs, tetes thermostatiques et recepteurs pour construire les appairages.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Appairages Zigbee</p>
+          <h2>Liens detecteurs et recepteurs</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/zigbee/pairings">
+        <div class="field">
+          <label for="link_id">Identifiant lien</label>
+          <input id="link_id" name="link_id" required />
+        </div>
+        <div class="field">
+          <label for="link_controller_id">Controleur</label>
+          <input id="link_controller_id" name="controller_id" list="controllers" required />
+        </div>
+        <div class="field">
+          <label for="source_device_id">Source</label>
+          <input id="source_device_id" name="source_device_id" list="zigbee-devices" required />
+        </div>
+        <div class="field">
+          <label for="target_device_id">Cible</label>
+          <input id="target_device_id" name="target_device_id" list="zigbee-devices" required />
+          <datalist id="zigbee-devices">
+            {% for device in admin_state.zigbee_devices %}
+            <option value="{{ device.device_id }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="relation_type">Type de lien</label>
+          <select id="relation_type" name="relation_type">
+            {% for relation in pairing_relation_options %}
+            <option value="{{ relation.value }}">{{ relation.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="pairing_notes">Notes</label>
+          <input id="pairing_notes" name="notes" />
+        </div>
+        <div class="field full">
+          <label>
+            <input name="enabled" type="checkbox" checked />
+            Lien actif
+          </label>
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Enregistrer le lien</button>
+        </div>
+      </form>
+      <div class="admin-list">
+        {% for pairing in admin_state.zigbee_pairings %}
+        <article class="list-item">
+          <strong>{{ pairing.link_id }}</strong>
+          <span>{{ pairing.source_device_id }} -> {{ pairing.target_device_id }}</span>
+          <small>{{ pairing.relation_type }} · {{ pairing.controller_id }}{% if pairing.notes %} · {{ pairing.notes }}{% endif %}</small>
+          <form class="inline-actions" method="post" action="/admin/zigbee/pairings/delete">
+            <input type="hidden" name="link_id" value="{{ pairing.link_id }}" />
+            <button class="button secondary" type="submit">Supprimer</button>
+          </form>
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucun lien d'appairage</strong>
+          <small>Definis les relations entre detecteurs, tetes et recepteurs par controleur.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Topologie</p>
+          <h2>Vue par controleur</h2>
+        </div>
+      </div>
+      <div class="admin-list">
+        {% for item in zigbee_overview %}
+        <article class="list-item topology-card">
+          <strong>{{ item.controller.label }}</strong>
+          <div class="topology-visual">{{ item.topology.svg | safe }}</div>
+          <div class="topology-grid">
+            <div>
+              <span class="topology-label">Detecteurs</span>
+              {% for node in item.topology.detectors %}
+              <small>{{ node.friendly_name }} · {{ node.device_id }}</small>
+              {% else %}
+              <small>Aucun detecteur</small>
+              {% endfor %}
+            </div>
+            <div>
+              <span class="topology-label">Tetes</span>
+              {% for node in item.topology.thermostats %}
+              <small>{{ node.friendly_name }} · {{ node.device_id }}</small>
+              {% else %}
+              <small>Aucune tete</small>
+              {% endfor %}
+            </div>
+            <div>
+              <span class="topology-label">Recepteurs</span>
+              {% for node in item.topology.receivers %}
+              <small>{{ node.friendly_name }} · {{ node.device_id }}</small>
+              {% else %}
+              <small>Aucun recepteur</small>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="topology-links">
+            {% for link in item.topology.links %}
+            <small>{{ link.source }} -> {{ link.target }} · {{ link.label }}</small>
+            {% else %}
+            <small>Aucun lien defini</small>
+            {% endfor %}
+          </div>
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucune topologie disponible</strong>
+          <small>Ajoute au moins un controleur et des devices pour visualiser les liens.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Planification</p>
+          <h2>Generation automatique</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="post" action="/admin/schedule">
+        <div class="field full">
+          <label>
+            <input name="enabled" type="checkbox" {% if admin_state.schedule.enabled %}checked{% endif %} />
+            Activer la generation mensuelle automatique
+          </label>
+        </div>
+        <div class="field">
+          <label for="day_of_month">Jour du mois</label>
+          <input id="day_of_month" name="day_of_month" type="number" min="1" max="28" value="{{ admin_state.schedule.day_of_month }}" required />
+        </div>
+        <div class="field">
+          <label for="hour">Heure</label>
+          <input id="hour" name="hour" type="number" min="0" max="23" value="{{ admin_state.schedule.hour }}" required />
+        </div>
+        <div class="field">
+          <label for="minute">Minute</label>
+          <input id="minute" name="minute" type="number" min="0" max="59" value="{{ admin_state.schedule.minute }}" required />
+        </div>
+        <div class="field">
+          <label>Dernier mois genere</label>
+          <input value="{{ admin_state.schedule.last_generated_month or 'Aucun' }}" disabled />
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Mettre a jour le planning</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Archives PDF</p>
+          <h2>Rapports enregistres</h2>
+        </div>
+      </div>
+      <form class="form-grid" method="get" action="/admin">
+        <div class="field">
+          <label for="start_month">Mois debut</label>
+          <input id="start_month" name="start_month" type="month" value="{{ archive_filters.start_month }}" />
+        </div>
+        <div class="field">
+          <label for="end_month">Mois fin</label>
+          <input id="end_month" name="end_month" type="month" value="{{ archive_filters.end_month }}" />
+        </div>
+        <div class="field full">
+          <label for="archive_owner_name">Occupant</label>
+          <select id="archive_owner_name" name="owner_name">
+            <option value="">Tous les occupants</option>
+            {% for occupant in admin_state.occupants %}
+            <option value="{{ occupant.owner_name }}" {% if archive_filters.owner_name == occupant.owner_name %}selected{% endif %}>{{ occupant.owner_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="inline-actions full">
+          <button class="button primary" type="submit">Filtrer</button>
+          <a class="button secondary" href="/admin">Reinitialiser</a>
+          <a class="button secondary" href="/admin/archives/export?start_month={{ archive_filters.start_month }}&end_month={{ archive_filters.end_month }}&owner_name={{ archive_filters.owner_name }}">Exporter en ZIP</a>
+        </div>
+      </form>
+      <div class="admin-list">
+        {% for pdf in generated_reports %}
+        <article class="list-item">
+          <strong>{{ pdf.display_name }}</strong>
+          <span>{{ pdf.month_label }} · {{ pdf.filename }}</span>
+          <small>
+            Occupants: {% for owner in pdf.owners %}{{ owner.owner_name }}{% if not loop.last %}, {% endif %}{% else %}non indexes{% endfor %}
+          </small>
+          <form class="form-grid" method="post" action="/admin/archives/rename">
+            <input type="hidden" name="filename" value="{{ pdf.filename }}" />
+            <div class="field full">
+              <label for="display_name_{{ loop.index }}">Nom archive</label>
+              <input id="display_name_{{ loop.index }}" name="display_name" value="{{ pdf.display_name }}" required />
+            </div>
+            <div class="inline-actions full">
+              <a class="button secondary" href="/admin/archives/{{ pdf.filename }}">Ouvrir</a>
+              <button class="button secondary" type="submit">Renommer</button>
+            </div>
+          </form>
+          <form class="inline-actions" method="post" action="/admin/archives/delete">
+            <input type="hidden" name="filename" value="{{ pdf.filename }}" />
+            <button class="button secondary" type="submit">Supprimer</button>
+          </form>
+        </article>
+        {% else %}
+        <article class="list-item">
+          <strong>Aucun PDF archive</strong>
+          <small>Utilise la generation manuelle ou active le planning mensuel.</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Impact courant</p>
+          <h2>Resume des repartitions</h2>
+        </div>
+      </div>
+      <div class="admin-list">
+        {% for allocation in report.allocations %}
+        <article class="list-item">
+          <strong>{{ allocation.owner_name }}</strong>
+          <span>{{ allocation.share_percent }}% du mois courant</span>
+          <small>{{ allocation.zone_count }} zones · score {{ allocation.total_effort_score }}</small>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}

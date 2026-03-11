@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div>
+    <p class="eyebrow">TRV26 Heating Share Monitor</p>
+    <h1>Repartition mensuelle de consommation</h1>
+    <p class="hero-copy">
+      Estimation relative par occupant a partir des temperatures de consigne, temperatures observees,
+      surfaces de chauffage et niveaux d'ouverture des tetes thermostatiques.
+    </p>
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" href="/reports/monthly.pdf">Exporter le PDF</a>
+    <a class="button secondary" href="/api/report">Voir le JSON</a>
+    <a class="button secondary" href="/admin">Administration</a>
+  </div>
+</header>
+
+<section class="card-grid">
+  {% for allocation in report.allocations %}
+  <article class="metric-card">
+    <span class="metric-label">{{ allocation.owner_name }}</span>
+    <strong class="metric-value">{{ allocation.share_percent }}%</strong>
+    <span class="metric-subtitle">{{ allocation.zone_count }} zones · {{ allocation.tracked_surface_m2 }} m2</span>
+    <div class="bar-track">
+      <div class="bar-fill" style="width: {{ allocation.share_percent }}%"></div>
+    </div>
+    <small>Score cumule: {{ allocation.total_effort_score }}</small>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="table-card">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">{{ report.month_label }}</p>
+      <h2>Detail par tete thermostatique</h2>
+    </div>
+    <p class="methodology">Methode {{ report.methodology }}</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Occupant</th>
+        <th>Zone</th>
+        <th>Delta</th>
+        <th>Surface</th>
+        <th>Vanne</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for zone in report.zones %}
+      <tr>
+        <td>{{ zone.owner_name }}</td>
+        <td>{{ zone.zone_label }}</td>
+        <td>{{ zone.delta_c }} C</td>
+        <td>{{ zone.surface_m2 }} m2</td>
+        <td>{{ (zone.valve_factor * 100) | round(0) }}%</td>
+        <td>{{ zone.effort_score }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

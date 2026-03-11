@@ -1,0 +1,27 @@
+{
+  "archives": [
+    {
+      "filename": "thermocalc-2026-03.pdf",
+      "display_name": "thermocalc-2026-03",
+      "month_label": "2026-03",
+      "generated_at": "2026-03-10T16:51:28.059243Z",
+      "owners": [
+        {
+          "owner_name": "Alice",
+          "share_percent": 33.44,
+          "total_effort_score": 49.088
+        },
+        {
+          "owner_name": "Benoit",
+          "share_percent": 15.66,
+          "total_effort_score": 22.99
+        },
+        {
+          "owner_name": "Claire",
+          "share_percent": 50.89,
+          "total_effort_score": 74.704
+        }
+      ]
+    }
+  ]
+}

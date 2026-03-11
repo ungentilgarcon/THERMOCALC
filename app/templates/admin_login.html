@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-card">
+    <p class="eyebrow">Administration</p>
+    <h1>Connexion</h1>
+    <p class="hero-copy">
+      L'administration protege les affectations, le planning PDF et les archives exportables.
+    </p>
+    {% if error %}
+    <p class="error-banner">{{ error }}</p>
+    {% endif %}
+    <form class="form-grid" method="post" action="/admin/login">
+      <div class="field full">
+        <label for="username">Identifiant</label>
+        <input id="username" name="username" autocomplete="username" required />
+      </div>
+      <div class="field full">
+        <label for="password">Mot de passe</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <div class="inline-actions full">
+        <button class="button primary" type="submit">Se connecter</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}
