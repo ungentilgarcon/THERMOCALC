@@ -61,6 +61,26 @@ Les pages et actions ci-dessous redirigent vers `/admin/login` si la session n'e
 - `POST /admin/schedule` : modifie la planification PDF
 - `POST /admin/reports/generate` : genere un PDF archive immediatement
 
+### Pilotage chauffage
+
+- `GET /pilotage-chauffage` : page de pilotage chauffage par occupant et par tete
+- `POST /pilotage-chauffage/profils` : cree ou met a jour un profil rapide utilisateur
+- `POST /pilotage-chauffage/profils/delete` : supprime un profil rapide
+- `POST /pilotage-chauffage/plannings` : cree un ou plusieurs creneaux hebdomadaires pour une tete
+- `POST /pilotage-chauffage/plannings/delete` : supprime un creneau hebdomadaire
+- `POST /pilotage-chauffage/override` : applique un override temporaire a une tete
+- `POST /pilotage-chauffage/override/delete` : retire l'override d'une tete
+- `POST /pilotage-chauffage/occupants/apply` : applique immediatement les consignes actives a toutes les tetes d'un occupant
+- `POST /pilotage-chauffage/occupants/hors-gel` : force toutes les tetes d'un occupant en mode vacances hors-gel
+- `POST /pilotage-chauffage/occupants/hors-gel/delete` : retire les overrides en cours d'un occupant
+
+Principes:
+
+- un profil rapide pre-remplit heure de debut, heure de fin et temperature cible
+- un creneau peut etre copie sur plusieurs jours en une seule soumission
+- un override temporaire reste prioritaire sur le planning
+- un mode `hors-gel` occupant est represente visuellement differemment d'un simple override manuel
+
 ### Archives PDF
 
 - `GET /admin/archives/export` : export ZIP des archives filtrees
@@ -118,6 +138,8 @@ Le mode consommation ajoute:
 - une saisie ECS par occupant
 - une facture combustible totale et son libelle
 - une synthese combinee chauffage plus ECS
+
+Le pilotage chauffage publie, lui, de vraies consignes MQTT et modifie `data/admin_state.json`.
 
 ## OpenAPI native FastAPI
 

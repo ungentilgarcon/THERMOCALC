@@ -31,6 +31,11 @@ Sur un mois, on somme l'effort de toutes les tetes d'une personne, puis on norma
 - API FastAPI
 - page web de suivi mensuel
 - ecran d'administration pour gerer occupants, tetes et surfaces
+- page de pilotage chauffage par occupant et par tete avec plannings hebdomadaires
+- profils rapides utilisateur type Confort, Eco, Nuit pour pre-remplir les creneaux
+- duplication d'un creneau sur plusieurs jours de la semaine en une seule action
+- application immediate d'un planning complet a toutes les tetes d'un occupant
+- mode vacances hors-gel sur toutes les tetes d'un occupant avec badge visuel dedie
 - page de test de calculs pour rejouer des scenarios de chauffe via une interface dediee
 - page de test de consommation pour simuler chauffage plus ECS par occupant
 - generation de rapport PDF mensuel
@@ -120,10 +125,11 @@ sample_fallback_enabled = true
 realtime_measurement_max_age_minutes = 180
 trv26_duty_cycle_window_hours = 24
 trv26_history_retention_hours = 72
+thermostat_control_refresh_minutes = 30
 
 [billing]
-heating_weight = 0.5
-ecs_weight = 0.5
+heating_weight = 0.65
+ecs_weight = 0.35
 
 [alerts]
 low_battery_threshold_percent = 10
@@ -168,6 +174,14 @@ Depuis `/admin`, on renseigne:
 - les affectations de tetes thermostatiques
 - les bridges Zigbee et leur configuration MQTT
 
+Depuis `/pilotage-chauffage`, on pilote ensuite l'usage quotidien:
+
+- creation de profils rapides utilisateur
+- creation de creneaux hebdomadaires par tete
+- copie d'un creneau sur plusieurs jours
+- application immediate des consignes d'un occupant
+- bascule de toutes les tetes d'un occupant en hors-gel
+
 ### 2. Inventaire Zigbee
 
 Chaque controleur Zigbee peut:
@@ -197,6 +211,8 @@ Le panneau "Telemetrie TRV26" de l'administration affiche aussi un premier duty 
 
 Si une tete descend sous `low_battery_threshold_percent`, elle est marquee `A remplacer` dans l'administration et une alerte mail est envoyee a `alerts.email_to` quand le SMTP est configure.
 
+Le meme provider sert aussi au pilotage chauffage: ThermoCalc publie les consignes vers `zigbee2mqtt/<device_id>/set` pour appliquer un planning, un override temporaire ou un mode hors-gel.
+
 ### 4. Calcul De Consommation
 
 Le moteur de calcul privilegie les dernieres mesures TRV26 recues en MQTT. Si aucune mesure recente n'est disponible, il retombe sur le jeu JSON de test local.
@@ -217,7 +233,7 @@ Quand une facture combustible totale doit etre repartie, ThermoCalc combine ensu
 - la part chauffage de chaque occupant
 - la part ECS de chaque occupant
 
-Par defaut, les deux composantes sont ponderees a 50/50 via `billing.heating_weight` et `billing.ecs_weight` dans `thermocalc.config.toml`.
+Par defaut, les deux composantes sont ponderees a `65/35` via `billing.heating_weight` et `billing.ecs_weight` dans `thermocalc.config.toml`.
 
 Cette formule garde la vanne comme signal principal, mais elle corrige le calcul avec:
 
@@ -243,6 +259,7 @@ Le projet produit:
 - `app/services/consumption.py` contient le modele de repartition.
 - `app/services/reporting.py` genere le PDF mensuel.
 - `app/services/admin_state.py` persiste la configuration occupants, tetes et planning.
+- `app/services/thermostat_control.py` resout les consignes actives et pilote les TRV via Zigbee2MQTT.
 - `app/services/runtime_measurements.py` maintient les derniers releves TRV26 recus sur MQTT, l'historique roulant et les abonnements en fond.
 - `app/services/notifications.py` envoie les alertes mail de batterie faible.
 - `app/services/scheduler.py` verifie la planification et ecrit les PDF sur disque.
@@ -258,6 +275,14 @@ L'ecran `/admin` permet de:
 - declarer plusieurs controleurs Zigbee
 - inventorier plusieurs detecteurs, tetes thermostatiques et recepteurs par controleur
 - creer des liens d'appairage entre detecteurs, tetes et recepteurs
+
+L'ecran `/pilotage-chauffage` permet de:
+
+- definir des profils rapides par utilisateur
+- construire des creneaux hebdomadaires tete par tete
+- copier un creneau sur les autres jours utiles
+- appliquer tout de suite les consignes d'un occupant
+- distinguer visuellement un override temporaire d'un vrai mode vacances hors-gel
 - lancer la discovery Zigbee2MQTT sur `bridge/devices`
 - activer `permit_join` depuis l'administration pour un bridge Zigbee2MQTT
 - tester la connectivite MQTT et l'etat du bridge

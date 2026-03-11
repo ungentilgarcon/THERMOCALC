@@ -59,7 +59,9 @@ Pour tester la consommation complete:
 4. Saisir la facture combustible totale.
 5. Executer le calcul et lire la synthese chauffage plus ECS.
 
-Par defaut, ThermoCalc applique une ponderation 50/50 entre chauffage et ECS pour convertir la facture combustible totale en montant final par occupant. Cette ponderation est configurable dans `thermocalc.config.toml`.
+Par defaut, ThermoCalc applique une ponderation `65/35` entre chauffage et ECS pour convertir la facture combustible totale en montant final par occupant. Cette ponderation est configurable dans `thermocalc.config.toml`.
+
+Le pilotage chauffage `reel` ne passe pas par cette page de test. Pour configurer des profils rapides, des creneaux hebdomadaires, des overrides temporaires ou un mode vacances hors-gel par occupant, utiliser `/pilotage-chauffage`.
 
 ## Interprétation rapide
 

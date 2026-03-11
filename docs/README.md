@@ -21,6 +21,7 @@ Cette documentation complete le README racine avec une vue exploitable par usage
 La documentation couvre:
 
 - le suivi de chauffe TRV26
+- le pilotage chauffage par occupant et par tete
 - la repartition ECS
 - l'administration Zigbee et archives
 - le mode de test de calculs
