@@ -7,6 +7,7 @@ from app.models.schemas import MonthlyAllocationReport, PdfScheduleConfig
 from app.services.admin_state import load_admin_state, mark_report_generated, select_ecs_allocation_for_period
 from app.services.reporting import save_monthly_pdf
 from app.services.runtime_measurements import sync_runtime_subscriptions
+from app.services.thermostat_control import apply_active_thermostat_controls
 from app.services.zigbee2mqtt import refresh_due_controllers
 
 
@@ -48,6 +49,7 @@ async def scheduler_loop() -> None:
             state = load_admin_state()
             sync_runtime_subscriptions(state)
             refresh_due_controllers()
+            apply_active_thermostat_controls()
             payload = load_sample_payload()
             report = build_monthly_allocation(payload)
             if should_generate_report(datetime.now(), state.schedule, report.month_label):

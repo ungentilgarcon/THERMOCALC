@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.core.config import BILLING_ECS_WEIGHT
 from app.core.config import ADMIN_STATE_PATH, GENERATED_REPORTS_DIR
@@ -12,6 +12,10 @@ from app.models.schemas import (
     EcsMeterReading,
     Occupant,
     PdfScheduleConfig,
+    ThermostatControlState,
+    ThermostatOverride,
+    ThermostatQuickProfile,
+    ThermostatScheduleEntry,
     ThermostatAssignment,
     ZigbeeController,
     ZigbeeEndpoint,
@@ -20,6 +24,21 @@ from app.models.schemas import (
 
 
 MAX_ECS_ALLOCATION_HISTORY = 36
+
+
+def _normalize_clock(value: str) -> str:
+    text = value.strip()
+    hour_text, minute_text = text.split(":", 1)
+    hour = int(hour_text)
+    minute = int(minute_text)
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        raise ValueError("Horaire invalide")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _validate_time_range(start_time: str, end_time: str, context_label: str) -> None:
+    if _normalize_clock(start_time) == _normalize_clock(end_time):
+        raise ValueError(f"L'heure de fin {context_label} doit etre differente de l'heure de debut")
 
 
 
@@ -64,6 +83,8 @@ def remove_occupant(owner_name: str) -> AdminState:
     state = load_admin_state()
     state.occupants = [item for item in state.occupants if item.owner_name.lower() != normalized_name]
     state.thermostats = [item for item in state.thermostats if item.owner_name.lower() != normalized_name]
+    state.thermostat_schedules = [item for item in state.thermostat_schedules if item.owner_name.lower() != normalized_name]
+    state.thermostat_overrides = [item for item in state.thermostat_overrides if item.owner_name.lower() != normalized_name]
     state.ecs_readings = [item for item in state.ecs_readings if item.owner_name.lower() != normalized_name]
     if state.last_ecs_allocation is not None:
         state.last_ecs_allocation.allocations = [
@@ -78,6 +99,51 @@ def remove_occupant(owner_name: str) -> AdminState:
         for run in state.ecs_allocation_history
     ]
     return save_admin_state(state)
+
+
+def add_or_update_quick_profile(
+    profile_id: str,
+    profile_name: str,
+    start_time: str,
+    end_time: str,
+    target_temperature_c: float,
+    enabled: bool = True,
+) -> AdminState:
+    state = load_admin_state()
+    normalized_profile_name = profile_name.strip()
+    normalized_profile_id = profile_id.strip() or normalized_profile_name.lower().replace(" ", "-")
+    profile = ThermostatQuickProfile(
+        profile_id=normalized_profile_id,
+        profile_name=normalized_profile_name,
+        start_time=_normalize_clock(start_time),
+        end_time=_normalize_clock(end_time),
+        target_temperature_c=target_temperature_c,
+        enabled=enabled,
+    )
+    _validate_time_range(profile.start_time, profile.end_time, "du profil")
+    for index, item in enumerate(state.thermostat_quick_profiles):
+        if item.profile_id.lower() == normalized_profile_id.lower():
+            state.thermostat_quick_profiles[index] = profile
+            break
+    else:
+        state.thermostat_quick_profiles.append(profile)
+    state.thermostat_quick_profiles.sort(key=lambda item: item.profile_name.lower())
+    return save_admin_state(state)
+
+
+def remove_quick_profile(profile_id: str) -> AdminState:
+    normalized_profile_id = profile_id.strip().lower()
+    state = load_admin_state()
+    state.thermostat_quick_profiles = [item for item in state.thermostat_quick_profiles if item.profile_id.lower() != normalized_profile_id]
+    return save_admin_state(state)
+
+
+def build_schedule_payload_from_profile(profile_id: str) -> ThermostatQuickProfile:
+    state = load_admin_state()
+    profile = next((item for item in state.thermostat_quick_profiles if item.profile_id.lower() == profile_id.strip().lower()), None)
+    if profile is None:
+        raise ValueError("Profil rapide introuvable")
+    return profile
 
 
 
@@ -117,6 +183,183 @@ def remove_thermostat(trv_id: str) -> AdminState:
     normalized_trv_id = trv_id.strip().lower()
     state = load_admin_state()
     state.thermostats = [item for item in state.thermostats if item.trv_id.lower() != normalized_trv_id]
+    state.thermostat_schedules = [item for item in state.thermostat_schedules if item.trv_id.lower() != normalized_trv_id]
+    state.thermostat_overrides = [item for item in state.thermostat_overrides if item.trv_id.lower() != normalized_trv_id]
+    state.thermostat_control_states = [item for item in state.thermostat_control_states if item.trv_id.lower() != normalized_trv_id]
+    return save_admin_state(state)
+
+
+def add_or_update_thermostat_schedule(
+    schedule_id: str,
+    trv_id: str,
+    weekday: int,
+    start_time: str,
+    end_time: str,
+    target_temperature_c: float,
+    profile_name: str = "",
+    enabled: bool = True,
+) -> AdminState:
+    state = load_admin_state()
+    assignment = next((item for item in state.thermostats if item.trv_id.lower() == trv_id.strip().lower()), None)
+    device = next((item for item in state.zigbee_devices if item.device_id.lower() == trv_id.strip().lower()), None)
+    owner_name = assignment.owner_name if assignment else (device.owner_name if device else "")
+    zone_label = assignment.zone_label if assignment else (device.zone_label if device else "")
+    if not owner_name or not zone_label:
+        raise ValueError("Affecte d'abord la tete a un occupant et une zone")
+    normalized_schedule_id = schedule_id.strip() or f"{trv_id.strip().lower()}-{weekday}-{_normalize_clock(start_time).replace(':', '')}"
+    entry = ThermostatScheduleEntry(
+        schedule_id=normalized_schedule_id,
+        trv_id=trv_id.strip(),
+        owner_name=owner_name,
+        zone_label=zone_label,
+        weekday=weekday,
+        start_time=_normalize_clock(start_time),
+        end_time=_normalize_clock(end_time),
+        target_temperature_c=target_temperature_c,
+        profile_name=profile_name.strip(),
+        enabled=enabled,
+    )
+    _validate_time_range(entry.start_time, entry.end_time, "du creneau")
+    for index, item in enumerate(state.thermostat_schedules):
+        if item.schedule_id.lower() == normalized_schedule_id.lower():
+            state.thermostat_schedules[index] = entry
+            break
+    else:
+        state.thermostat_schedules.append(entry)
+    state.thermostat_schedules.sort(key=lambda item: (item.owner_name.lower(), item.trv_id.lower(), item.weekday, item.start_time))
+    return save_admin_state(state)
+
+
+def create_schedules_for_days(
+    trv_id: str,
+    weekdays: list[int],
+    start_time: str,
+    end_time: str,
+    target_temperature_c: float,
+    profile_name: str = "",
+    enabled: bool = True,
+) -> AdminState:
+    if not weekdays:
+        raise ValueError("Choisis au moins un jour")
+    state: AdminState | None = None
+    for weekday in sorted(set(weekdays)):
+        state = add_or_update_thermostat_schedule(
+            schedule_id="",
+            trv_id=trv_id,
+            weekday=weekday,
+            start_time=start_time,
+            end_time=end_time,
+            target_temperature_c=target_temperature_c,
+            profile_name=profile_name,
+            enabled=enabled,
+        )
+    return state or load_admin_state()
+
+
+def remove_thermostat_schedule(schedule_id: str) -> AdminState:
+    normalized_schedule_id = schedule_id.strip().lower()
+    state = load_admin_state()
+    state.thermostat_schedules = [item for item in state.thermostat_schedules if item.schedule_id.lower() != normalized_schedule_id]
+    return save_admin_state(state)
+
+
+def set_thermostat_override(
+    trv_id: str,
+    target_temperature_c: float,
+    duration_hours: int | None,
+    now: datetime | None = None,
+    mode: str = "manual",
+) -> AdminState:
+    state = load_admin_state()
+    assignment = next((item for item in state.thermostats if item.trv_id.lower() == trv_id.strip().lower()), None)
+    device = next((item for item in state.zigbee_devices if item.device_id.lower() == trv_id.strip().lower()), None)
+    owner_name = assignment.owner_name if assignment else (device.owner_name if device else "")
+    zone_label = assignment.zone_label if assignment else (device.zone_label if device else "")
+    if not owner_name or not zone_label:
+        raise ValueError("Affecte d'abord la tete a un occupant et une zone")
+    started_at = now or datetime.now(timezone.utc)
+    expires_at = None if duration_hours is None else started_at.replace(microsecond=0) + timedelta(hours=duration_hours)
+    override = ThermostatOverride(
+        trv_id=trv_id.strip(),
+        owner_name=owner_name,
+        zone_label=zone_label,
+        target_temperature_c=target_temperature_c,
+        duration_hours=duration_hours,
+        mode=mode.strip() or "manual",
+        started_at=started_at,
+        expires_at=expires_at,
+    )
+    state.thermostat_overrides = [item for item in state.thermostat_overrides if item.trv_id.lower() != trv_id.strip().lower()]
+    state.thermostat_overrides.append(override)
+    state.thermostat_overrides.sort(key=lambda item: (item.owner_name.lower(), item.trv_id.lower()))
+    return save_admin_state(state)
+
+
+def clear_thermostat_override(trv_id: str) -> AdminState:
+    normalized_trv_id = trv_id.strip().lower()
+    state = load_admin_state()
+    state.thermostat_overrides = [item for item in state.thermostat_overrides if item.trv_id.lower() != normalized_trv_id]
+    return save_admin_state(state)
+
+
+def clear_expired_thermostat_overrides(now: datetime | None = None) -> AdminState:
+    current_time = now or datetime.now(timezone.utc)
+    state = load_admin_state()
+    state.thermostat_overrides = [
+        item for item in state.thermostat_overrides if item.expires_at is None or item.expires_at > current_time
+    ]
+    return save_admin_state(state)
+
+
+def list_occupant_trv_ids(state: AdminState, owner_name: str) -> list[str]:
+    normalized_owner_name = owner_name.strip().lower()
+    return [item.trv_id for item in state.thermostats if item.owner_name.lower() == normalized_owner_name]
+
+
+def set_occupant_hors_gel(owner_name: str, target_temperature_c: float = 7.0) -> AdminState:
+    state = load_admin_state()
+    trv_ids = list_occupant_trv_ids(state, owner_name)
+    if not trv_ids:
+        raise ValueError("Aucune tete affectee a cet occupant")
+    for trv_id in trv_ids:
+        state = set_thermostat_override(
+            trv_id=trv_id,
+            target_temperature_c=target_temperature_c,
+            duration_hours=None,
+            mode="hors-gel",
+        )
+    return state
+
+
+def clear_occupant_overrides(owner_name: str) -> AdminState:
+    state = load_admin_state()
+    trv_ids = {item.trv_id.lower() for item in state.thermostats if item.owner_name.lower() == owner_name.strip().lower()}
+    state.thermostat_overrides = [item for item in state.thermostat_overrides if item.trv_id.lower() not in trv_ids]
+    return save_admin_state(state)
+
+
+def update_thermostat_control_state(
+    trv_id: str,
+    last_target_temperature_c: float | None,
+    last_applied_reason: str,
+    last_command_status: str,
+    last_command_at: datetime | None = None,
+) -> AdminState:
+    state = load_admin_state()
+    control_state = ThermostatControlState(
+        trv_id=trv_id.strip(),
+        last_target_temperature_c=last_target_temperature_c,
+        last_applied_reason=last_applied_reason.strip(),
+        last_command_status=last_command_status.strip(),
+        last_command_at=last_command_at,
+    )
+    for index, item in enumerate(state.thermostat_control_states):
+        if item.trv_id.lower() == control_state.trv_id.lower():
+            state.thermostat_control_states[index] = control_state
+            break
+    else:
+        state.thermostat_control_states.append(control_state)
+    state.thermostat_control_states.sort(key=lambda item: item.trv_id.lower())
     return save_admin_state(state)
 
 
@@ -333,6 +576,27 @@ def sync_thermostat_assignments(state: AdminState) -> AdminState:
 
     synced_assignments.sort(key=lambda item: item.trv_id.lower())
     state.thermostats = synced_assignments
+    assignments_by_trv = {item.trv_id.lower(): item for item in synced_assignments}
+    state.thermostat_schedules = [
+        item.model_copy(
+            update={
+                "owner_name": assignments_by_trv[item.trv_id.lower()].owner_name,
+                "zone_label": assignments_by_trv[item.trv_id.lower()].zone_label,
+            }
+        )
+        for item in state.thermostat_schedules
+        if item.trv_id.lower() in assignments_by_trv
+    ]
+    state.thermostat_overrides = [
+        item.model_copy(
+            update={
+                "owner_name": assignments_by_trv[item.trv_id.lower()].owner_name,
+                "zone_label": assignments_by_trv[item.trv_id.lower()].zone_label,
+            }
+        )
+        for item in state.thermostat_overrides
+        if item.trv_id.lower() in assignments_by_trv
+    ]
     return state
 
 

@@ -300,6 +300,120 @@ small {
   gap: 12px;
 }
 
+.compact-list .list-item {
+  padding: 14px 16px;
+}
+
+.profile-list {
+  margin-top: 18px;
+}
+
+.profile-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.control-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.control-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.control-form {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--cool);
+  background: rgba(23, 50, 77, 0.08);
+  font-size: 0.86rem;
+}
+
+.status-override {
+  color: var(--warm-deep);
+  background: rgba(201, 108, 58, 0.12);
+  border-color: rgba(201, 108, 58, 0.24);
+}
+
+.occupant-status-row {
+  margin-top: 10px;
+}
+
+.status-occupant-planning {
+  color: var(--cool);
+  background: rgba(23, 50, 77, 0.08);
+}
+
+.status-occupant-temporary {
+  color: var(--warm-deep);
+  background: rgba(201, 108, 58, 0.12);
+  border-color: rgba(201, 108, 58, 0.24);
+}
+
+.status-occupant-freeze {
+  color: #11505d;
+  background: rgba(17, 80, 93, 0.12);
+  border-color: rgba(17, 80, 93, 0.24);
+}
+
+.status-occupant-mixed {
+  color: #6d4c12;
+  background: rgba(109, 76, 18, 0.14);
+  border-color: rgba(109, 76, 18, 0.24);
+}
+
+.control-meta {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.weekday-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.weekday-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.weekday-option input {
+  width: auto;
+}
+
 .scenario-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -497,6 +611,15 @@ th {
 
   .hero-actions {
     align-items: stretch;
+  }
+
+  .control-card-header {
+    flex-direction: column;
+  }
+
+  .profile-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   table,

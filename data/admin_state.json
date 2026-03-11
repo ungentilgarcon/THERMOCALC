@@ -63,7 +63,43 @@
     "output_dir": "generated_reports",
     "last_generated_month": "2026-03"
   },
+  "thermostat_quick_profiles": [],
+  "thermostat_schedules": [],
+  "thermostat_overrides": [],
+  "thermostat_control_states": [],
   "controllers": [],
   "zigbee_devices": [],
-  "zigbee_pairings": []
+  "zigbee_pairings": [],
+  "ecs_readings": [
+    {
+      "owner_name": "Alice",
+      "last_index_m3": 0.0,
+      "previous_index_m3": null,
+      "last_delta_m3": 0.0,
+      "updated_at": null
+    },
+    {
+      "owner_name": "Benoit",
+      "last_index_m3": 0.0,
+      "previous_index_m3": null,
+      "last_delta_m3": 0.0,
+      "updated_at": null
+    },
+    {
+      "owner_name": "Claire",
+      "last_index_m3": 0.0,
+      "previous_index_m3": null,
+      "last_delta_m3": 0.0,
+      "updated_at": null
+    },
+    {
+      "owner_name": "D",
+      "last_index_m3": 0.0,
+      "previous_index_m3": null,
+      "last_delta_m3": 0.0,
+      "updated_at": null
+    }
+  ],
+  "last_ecs_allocation": null,
+  "ecs_allocation_history": []
 }

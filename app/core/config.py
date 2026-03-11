@@ -42,6 +42,7 @@ REALTIME_SAMPLE_FALLBACK_ENABLED = bool(_read(ROOT_CONFIG, "app", "sample_fallba
 REALTIME_MEASUREMENT_MAX_AGE_MINUTES = int(_read(ROOT_CONFIG, "app", "realtime_measurement_max_age_minutes", default=180))
 TRV26_DUTY_CYCLE_WINDOW_HOURS = int(_read(ROOT_CONFIG, "app", "trv26_duty_cycle_window_hours", default=24))
 TRV26_HISTORY_RETENTION_HOURS = int(_read(ROOT_CONFIG, "app", "trv26_history_retention_hours", default=72))
+THERMOSTAT_CONTROL_REFRESH_MINUTES = int(_read(ROOT_CONFIG, "app", "thermostat_control_refresh_minutes", default=30))
 ZIGBEE_DISCOVERY_TIMEOUT_SECONDS = int(_read(ROOT_CONFIG, "zigbee2mqtt", "defaults", "discovery_timeout_seconds", default=8))
 ZIGBEE_CONNECTIVITY_TIMEOUT_SECONDS = int(_read(ROOT_CONFIG, "zigbee2mqtt", "defaults", "connectivity_timeout_seconds", default=5))
 DEFAULT_ZIGBEE2MQTT_BASE_TOPIC = str(_read(ROOT_CONFIG, "zigbee2mqtt", "defaults", "base_topic", default="zigbee2mqtt"))

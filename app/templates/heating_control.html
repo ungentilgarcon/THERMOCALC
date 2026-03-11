@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div>
+    <p class="eyebrow">Pilotage chauffage</p>
+    <h1>Horaires et consignes par tete</h1>
+    <p class="hero-copy">
+      Definis les temperatures cible par occupant et par TRV, puis force une consigne temporaire pendant 2h, 12h ou 24h si besoin.
+    </p>
+    {% if notice %}
+    <p class="notice">{{ notice }}</p>
+    {% endif %}
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" href="/admin">Retour a l'administration</a>
+    <a class="button secondary" href="/">Retour au suivi</a>
+  </div>
+</header>
+
+<section class="table-card">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Priorites</p>
+      <h2>Regles d'application</h2>
+    </div>
+  </div>
+  <div class="admin-list">
+    <article class="list-item">
+      <strong>Planning hebdomadaire</strong>
+      <small>Chaque creneau s'applique sur la tete choisie. Si plusieurs creneaux se chevauchent, la temperature la plus haute gagne.</small>
+    </article>
+    <article class="list-item">
+      <strong>Override temporaire</strong>
+      <small>Un override manuel prioritaire remplace le planning pendant 2h, 12h ou 24h, puis expire automatiquement.</small>
+    </article>
+    <article class="list-item">
+      <strong>Execution</strong>
+      <small>La consigne est republiee automatiquement vers Zigbee2MQTT quand elle change ou au delai de rafraichissement configure.</small>
+    </article>
+  </div>
+</section>
+
+<section class="table-card">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Profils rapides</p>
+      <h2>Confort, Eco, Nuit et variantes utilisateur</h2>
+    </div>
+  </div>
+  <form class="form-grid" method="post" action="/pilotage-chauffage/profils">
+    <div class="field">
+      <label>Nom du profil</label>
+      <input name="profile_name" placeholder="Confort" required />
+    </div>
+    <div class="field">
+      <label>Temperature cible</label>
+      <input name="target_temperature_c" type="number" min="5" max="30" step="0.5" value="19.5" required />
+    </div>
+    <div class="field">
+      <label>Debut par defaut</label>
+      <input name="start_time" type="time" value="06:00" required />
+    </div>
+    <div class="field">
+      <label>Fin par defaut</label>
+      <input name="end_time" type="time" value="08:00" required />
+    </div>
+    <div class="field full">
+      <label>
+        <input name="enabled" type="checkbox" checked />
+        Profil actif
+      </label>
+    </div>
+    <div class="inline-actions full">
+      <button class="button primary" type="submit">Enregistrer le profil</button>
+    </div>
+  </form>
+  <div class="admin-list profile-list">
+    {% for profile in quick_profiles %}
+    <article class="list-item profile-item">
+      <div>
+        <strong>{{ profile.profile_name }}</strong>
+        <small>{{ profile.start_time }} - {{ profile.end_time }} · {{ profile.target_temperature_c }} C{% if not profile.enabled %} · desactive{% endif %}</small>
+      </div>
+      <form class="inline-actions" method="post" action="/pilotage-chauffage/profils/delete">
+        <input type="hidden" name="profile_id" value="{{ profile.profile_id }}" />
+        <button class="button secondary" type="submit">Supprimer</button>
+      </form>
+    </article>
+    {% else %}
+    <article class="list-item">
+      <small>Aucun profil rapide pour l'instant. Cree par exemple Confort, Eco et Nuit pour pre-remplir les creneaux.</small>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="stack">
+  {% for group in heating_groups %}
+  <section class="table-card">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Occupant</p>
+        <h2>{{ group.occupant.owner_name }}</h2>
+        <div class="occupant-status-row">
+          <span class="status-pill {{ group.occupant_status_class }}">{{ group.occupant_status_label }}</span>
+        </div>
+      </div>
+      <div class="inline-actions">
+        <form method="post" action="/pilotage-chauffage/occupants/apply">
+          <input type="hidden" name="owner_name" value="{{ group.occupant.owner_name }}" />
+          <button class="button secondary" type="submit">Appliquer maintenant</button>
+        </form>
+        <form method="post" action="/pilotage-chauffage/occupants/hors-gel">
+          <input type="hidden" name="owner_name" value="{{ group.occupant.owner_name }}" />
+          <button class="button secondary" type="submit">HORS-GEL</button>
+        </form>
+        {% if group.has_override %}
+        <form method="post" action="/pilotage-chauffage/occupants/hors-gel/delete">
+          <input type="hidden" name="owner_name" value="{{ group.occupant.owner_name }}" />
+          <button class="button secondary" type="submit">Arreter les overrides</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    <div class="control-grid">
+      {% for item in group.thermostats %}
+      <article class="control-card">
+        <div class="control-card-header">
+          <div>
+            <strong>{{ item.assignment.zone_label }}</strong>
+            <small>{{ item.assignment.trv_id }} · {{ item.assignment.surface_m2 }} m2</small>
+          </div>
+          {% if item.override %}
+          <span class="status-pill status-override">
+            {% if item.override.mode == "hors-gel" %}
+            Hors-gel actif
+            {% elif item.override.expires_at %}
+            Override jusqu'au {{ item.override.expires_at.strftime('%Y-%m-%d %H:%M') }}
+            {% else %}
+            Override actif
+            {% endif %}
+          </span>
+          {% else %}
+          <span class="status-pill">Planning actif</span>
+          {% endif %}
+        </div>
+
+        <div class="admin-list compact-list">
+          {% for schedule in item.schedules %}
+          <article class="list-item">
+            <strong>{{ weekday_options[schedule.weekday].label }} · {{ schedule.start_time }} - {{ schedule.end_time }}</strong>
+            <small>
+              {{ schedule.target_temperature_c }} C
+              {% if schedule.profile_name %}· profil {{ schedule.profile_name }}{% endif %}
+              {% if not schedule.enabled %}· desactive{% endif %}
+            </small>
+            <form class="inline-actions" method="post" action="/pilotage-chauffage/plannings/delete">
+              <input type="hidden" name="schedule_id" value="{{ schedule.schedule_id }}" />
+              <button class="button secondary" type="submit">Supprimer</button>
+            </form>
+          </article>
+          {% else %}
+          <article class="list-item">
+            <small>Aucun creneau configure pour cette tete.</small>
+          </article>
+          {% endfor %}
+        </div>
+
+        <form class="form-grid control-form" method="post" action="/pilotage-chauffage/plannings">
+          <input type="hidden" name="trv_id" value="{{ item.assignment.trv_id }}" />
+          <div class="field full">
+            <label>Profil rapide</label>
+            <select name="profile_id">
+              <option value="">Aucun profil</option>
+              {% for profile in quick_profiles %}
+              <option value="{{ profile.profile_id }}">{{ profile.profile_name }} · {{ profile.start_time }} - {{ profile.end_time }} · {{ profile.target_temperature_c }} C</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>Jour</label>
+            <select name="weekday">
+              {% for weekday in weekday_options %}
+              <option value="{{ weekday.value }}">{{ weekday.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>Temperature cible</label>
+            <input name="target_temperature_c" type="number" min="5" max="30" step="0.5" value="20" required />
+          </div>
+          <div class="field">
+            <label>Debut</label>
+            <input name="start_time" type="time" value="06:00" required />
+          </div>
+          <div class="field">
+            <label>Fin</label>
+            <input name="end_time" type="time" value="08:00" required />
+          </div>
+          <div class="field full">
+            <label>Copier aussi sur</label>
+            <div class="weekday-checks">
+              {% for weekday in weekday_options %}
+              <label class="weekday-option">
+                <input name="copy_weekdays" type="checkbox" value="{{ weekday.value }}" />
+                {{ weekday.label }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="field full">
+            <label>
+              <input name="enabled" type="checkbox" checked />
+              Creneau actif
+            </label>
+          </div>
+          <div class="inline-actions full">
+            <button class="button primary" type="submit">Ajouter un creneau</button>
+          </div>
+        </form>
+
+        <form class="form-grid control-form" method="post" action="/pilotage-chauffage/override">
+          <input type="hidden" name="trv_id" value="{{ item.assignment.trv_id }}" />
+          <div class="field">
+            <label>Force a</label>
+            <input name="target_temperature_c" type="number" min="5" max="30" step="0.5" value="21" required />
+          </div>
+          <div class="field">
+            <label>Duree</label>
+            <select name="duration_hours">
+              <option value="2">2h</option>
+              <option value="12">12h</option>
+              <option value="24">24h</option>
+            </select>
+          </div>
+          <div class="inline-actions full">
+            <button class="button primary" type="submit">Activer l'override</button>
+            {% if item.override %}
+            <button class="button secondary" formaction="/pilotage-chauffage/override/delete" type="submit">Arreter l'override</button>
+            {% endif %}
+          </div>
+        </form>
+
+        {% if item.control_state %}
+        <div class="control-meta">
+          <small>Derniere cible appliquee: {{ item.control_state.last_target_temperature_c if item.control_state.last_target_temperature_c is not none else '-' }} C</small>
+          <small>Raison: {{ item.control_state.last_applied_reason or '-' }}</small>
+          <small>Statut: {{ item.control_state.last_command_status or '-' }}</small>
+          <small>Horodatage: {% if item.control_state.last_command_at %}{{ item.control_state.last_command_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</small>
+        </div>
+        {% endif %}
+      </article>
+      {% else %}
+      <article class="list-item">
+        <strong>Aucune tete affectee</strong>
+        <small>Affecte au moins une tete TRV dans l'administration pour ajouter un planning a {{ group.occupant.owner_name }}.</small>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <section class="table-card">
+    <div class="admin-list">
+      <article class="list-item">
+        <strong>Aucun occupant configure</strong>
+        <small>Ajoute des occupants et des tetes TRV dans l'administration avant de definir les horaires.</small>
+      </article>
+    </div>
+  </section>
+  {% endfor %}
+</section>
+{% endblock %}

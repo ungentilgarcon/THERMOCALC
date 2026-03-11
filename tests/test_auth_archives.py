@@ -156,6 +156,35 @@ def test_test_consumption_page_requires_admin_login() -> None:
     assert response.headers["location"] == "/admin/login"
 
 
+def test_heating_control_page_requires_admin_login() -> None:
+    with TestClient(app) as client:
+        response = client.get("/pilotage-chauffage", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login"
+
+
+def test_heating_control_page_renders_after_login(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "ADMIN_USERNAME", "admin")
+    monkeypatch.setattr(auth, "ADMIN_PASSWORD", "secret")
+
+    with TestClient(app) as client:
+        login = client.post(
+            "/admin/login",
+            data={"username": "admin", "password": "secret"},
+            follow_redirects=False,
+        )
+        assert login.status_code == 303
+
+        response = client.get("/pilotage-chauffage")
+
+    assert response.status_code == 200
+    assert "Pilotage chauffage" in response.text
+    assert "Override temporaire" in response.text
+    assert "Profils rapides" in response.text
+    assert "HORS-GEL" in response.text
+
+
 def test_test_consumption_page_runs_manual_scenario(monkeypatch) -> None:
     monkeypatch.setattr(auth, "ADMIN_USERNAME", "admin")
     monkeypatch.setattr(auth, "ADMIN_PASSWORD", "secret")

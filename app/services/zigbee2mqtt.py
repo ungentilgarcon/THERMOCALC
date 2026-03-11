@@ -128,6 +128,28 @@ def set_permit_join(controller: ZigbeeController, seconds: int) -> None:
     client.disconnect()
 
 
+def publish_thermostat_setpoint(
+    controller: ZigbeeController,
+    device_id: str,
+    target_temperature_c: float,
+    preset: str = "manual",
+) -> None:
+    broker = build_broker_config(controller)
+    topic = f"{broker.base_topic}/{device_id}/set"
+    payload = {
+        "occupied_heating_setpoint": round(target_temperature_c, 1),
+        "current_heating_setpoint": round(target_temperature_c, 1),
+    }
+    if preset:
+        payload["preset"] = preset
+    client = _build_client(broker)
+    client.connect(broker.host, broker.port, keepalive=30)
+    client.loop_start()
+    client.publish(topic, json.dumps(payload), qos=1)
+    client.loop_stop()
+    client.disconnect()
+
+
 def test_broker_connectivity(controller: ZigbeeController) -> tuple[bool, str]:
     broker = build_broker_config(controller)
     state_topic = f"{broker.base_topic}/bridge/state"

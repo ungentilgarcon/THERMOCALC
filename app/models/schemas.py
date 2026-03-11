@@ -113,6 +113,47 @@ class PdfScheduleConfig(BaseModel):
     last_generated_month: str | None = None
 
 
+class ThermostatScheduleEntry(BaseModel):
+    schedule_id: str = Field(min_length=1)
+    trv_id: str = Field(min_length=1)
+    owner_name: str = Field(min_length=1)
+    zone_label: str = Field(min_length=1)
+    weekday: int = Field(ge=0, le=6)
+    start_time: str = Field(min_length=5, max_length=5)
+    end_time: str = Field(min_length=5, max_length=5)
+    target_temperature_c: float = Field(ge=5, le=30)
+    profile_name: str = ""
+    enabled: bool = True
+
+
+class ThermostatQuickProfile(BaseModel):
+    profile_id: str = Field(min_length=1)
+    profile_name: str = Field(min_length=1)
+    start_time: str = Field(min_length=5, max_length=5)
+    end_time: str = Field(min_length=5, max_length=5)
+    target_temperature_c: float = Field(ge=5, le=30)
+    enabled: bool = True
+
+
+class ThermostatOverride(BaseModel):
+    trv_id: str = Field(min_length=1)
+    owner_name: str = Field(min_length=1)
+    zone_label: str = Field(min_length=1)
+    target_temperature_c: float = Field(ge=5, le=30)
+    duration_hours: int | None = Field(default=None, ge=1, le=720)
+    mode: str = "manual"
+    started_at: datetime
+    expires_at: datetime | None = None
+
+
+class ThermostatControlState(BaseModel):
+    trv_id: str = Field(min_length=1)
+    last_target_temperature_c: float | None = Field(default=None, ge=5, le=30)
+    last_applied_reason: str = ""
+    last_command_at: datetime | None = None
+    last_command_status: str = ""
+
+
 class EcsMeterReading(BaseModel):
     owner_name: str = Field(min_length=1)
     last_index_m3: float = Field(ge=0)
@@ -143,6 +184,10 @@ class AdminState(BaseModel):
     occupants: list[Occupant] = Field(default_factory=list)
     thermostats: list[ThermostatAssignment] = Field(default_factory=list)
     schedule: PdfScheduleConfig = Field(default_factory=PdfScheduleConfig)
+    thermostat_quick_profiles: list[ThermostatQuickProfile] = Field(default_factory=list)
+    thermostat_schedules: list[ThermostatScheduleEntry] = Field(default_factory=list)
+    thermostat_overrides: list[ThermostatOverride] = Field(default_factory=list)
+    thermostat_control_states: list[ThermostatControlState] = Field(default_factory=list)
     controllers: list[ZigbeeController] = Field(default_factory=list)
     zigbee_devices: list[ZigbeeEndpoint] = Field(default_factory=list)
     zigbee_pairings: list[ZigbeePairingLink] = Field(default_factory=list)

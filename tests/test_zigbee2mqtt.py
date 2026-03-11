@@ -5,6 +5,7 @@ from app.services import runtime_measurements as runtime_measurements_service
 from app.services.zigbee import build_controller_topology
 from app.services import zigbee2mqtt as zigbee2mqtt_service
 from app.services.zigbee2mqtt import build_broker_config, map_bridge_devices, prepare_new_thermostat_pairing, should_refresh_controller
+from app.services.zigbee2mqtt import publish_thermostat_setpoint
 
 
 def test_build_broker_config_parses_mqtt_url() -> None:
@@ -249,6 +250,44 @@ def test_extract_measurement_reads_trv26_payload() -> None:
     assert measurement["running_state"] == "heat"
     assert measurement["preset"] == "manual"
     assert measurement["error_status"] == 0
+
+
+def test_publish_thermostat_setpoint_uses_device_set_topic(monkeypatch) -> None:
+    controller = ZigbeeController(
+        controller_id="bridge-a",
+        label="Bridge A",
+        provider_type="zigbee2mqtt",
+        endpoint_url="mqtt://broker.local:1883",
+        base_topic="custom-z2m",
+    )
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def connect(self, host, port, keepalive=30):
+            captured["connect"] = (host, port, keepalive)
+
+        def loop_start(self):
+            return None
+
+        def publish(self, topic, payload, qos=0):
+            captured["topic"] = topic
+            captured["payload"] = payload
+            captured["qos"] = qos
+
+        def loop_stop(self):
+            return None
+
+        def disconnect(self):
+            return None
+
+    monkeypatch.setattr(zigbee2mqtt_service, "_build_client", lambda broker: FakeClient())
+
+    publish_thermostat_setpoint(controller, "trv26-salon-1", 21.5)
+
+    assert captured["connect"] == ("broker.local", 1883, 30)
+    assert captured["topic"] == "custom-z2m/trv26-salon-1/set"
+    assert '"occupied_heating_setpoint": 21.5' in str(captured["payload"])
+    assert '"preset": "manual"' in str(captured["payload"])
 
 
 def test_compute_duty_cycle_percent_uses_recent_history(monkeypatch) -> None:

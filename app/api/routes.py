@@ -25,19 +25,29 @@ from app.core.config import (
 from app.models.schemas import AllocationInput
 from app.services.archives import delete_archive, export_archives_zip, list_archive_records, rename_archive
 from app.services.admin_state import (
+    add_or_update_quick_profile,
     add_or_update_controller,
+    add_or_update_thermostat_schedule,
     add_or_update_thermostat,
     add_or_update_zigbee_device,
     add_or_update_zigbee_pairing,
     add_occupant,
     apply_assignments_to_payload,
+    build_schedule_payload_from_profile,
+    clear_thermostat_override,
+    clear_occupant_overrides,
+    create_schedules_for_days,
     ensure_ecs_readings_for_occupants,
     load_admin_state,
     remove_controller,
     remove_occupant,
+    remove_quick_profile,
+    remove_thermostat_schedule,
     remove_thermostat,
     remove_zigbee_device,
     remove_zigbee_pairing,
+    set_occupant_hors_gel,
+    set_thermostat_override,
     select_ecs_allocation_for_period,
     update_ecs_readings_and_allocate,
     update_schedule,
@@ -48,6 +58,7 @@ from app.services.consumption import build_monthly_allocation
 from app.services.reporting import build_monthly_pdf
 from app.services.runtime_measurements import build_realtime_payload, build_trv26_telemetry
 from app.services.scheduler import run_scheduled_generation_once
+from app.services.thermostat_control import WEEKDAY_LABELS, apply_active_thermostat_controls
 from app.services.test_scenarios import (
     build_ecs_rows,
     build_empty_payload,
@@ -123,8 +134,60 @@ def test_consumption_redirect(notice: str = "") -> RedirectResponse:
     return RedirectResponse(url=f"/test-consommation{suffix}", status_code=303)
 
 
+def heating_control_redirect(notice: str = "") -> RedirectResponse:
+    suffix = f"?notice={quote_plus(notice)}" if notice else ""
+    return RedirectResponse(url=f"/pilotage-chauffage{suffix}", status_code=303)
+
+
 def sanitize_filename(filename: str) -> str:
     return Path(filename).name
+
+
+def build_heating_control_view(admin_state) -> list[dict[str, object]]:
+    overrides_by_trv = {item.trv_id.lower(): item for item in admin_state.thermostat_overrides}
+    control_states_by_trv = {item.trv_id.lower(): item for item in admin_state.thermostat_control_states}
+    grouped: list[dict[str, object]] = []
+    for occupant in admin_state.occupants:
+        thermostats = []
+        assignments = [item for item in admin_state.thermostats if item.owner_name.lower() == occupant.owner_name.lower()]
+        for assignment in assignments:
+            thermostats.append(
+                {
+                    "assignment": assignment,
+                    "schedules": [
+                        item
+                        for item in admin_state.thermostat_schedules
+                        if item.trv_id.lower() == assignment.trv_id.lower()
+                    ],
+                    "override": overrides_by_trv.get(assignment.trv_id.lower()),
+                    "control_state": control_states_by_trv.get(assignment.trv_id.lower()),
+                }
+            )
+        occupant_overrides = [item["override"] for item in thermostats if item["override"] is not None]
+        has_hors_gel = any(item.mode == "hors-gel" for item in occupant_overrides)
+        has_temporary_override = any(item.mode != "hors-gel" for item in occupant_overrides)
+        if has_hors_gel and has_temporary_override:
+            occupant_status_label = "Vacances + overrides"
+            occupant_status_class = "status-occupant-mixed"
+        elif has_hors_gel:
+            occupant_status_label = "Mode vacances hors-gel"
+            occupant_status_class = "status-occupant-freeze"
+        elif has_temporary_override:
+            occupant_status_label = "Override temporaire"
+            occupant_status_class = "status-occupant-temporary"
+        else:
+            occupant_status_label = "Planning seul"
+            occupant_status_class = "status-occupant-planning"
+        grouped.append(
+            {
+                "occupant": occupant,
+                "thermostats": thermostats,
+                "has_override": any(item["override"] is not None for item in thermostats),
+                "occupant_status_label": occupant_status_label,
+                "occupant_status_class": occupant_status_class,
+            }
+        )
+    return grouped
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -206,6 +269,24 @@ def ecs_page(request: Request, notice: str = "") -> Response:
             "ecs_readings": admin_state.ecs_readings,
             "last_ecs_allocation": admin_state.last_ecs_allocation,
             "ecs_allocation_history": admin_state.ecs_allocation_history,
+        },
+    )
+
+
+@router.get("/pilotage-chauffage", response_class=HTMLResponse)
+def heating_control_page(request: Request, notice: str = "") -> Response:
+    if not is_admin_authenticated(request):
+        return admin_login_redirect()
+    admin_state = load_admin_state()
+    return templates.TemplateResponse(
+        request=request,
+        name="heating_control.html",
+        context={
+            "notice": notice,
+            "admin_state": admin_state,
+            "weekday_options": [{"value": index, "label": label} for index, label in enumerate(WEEKDAY_LABELS)],
+            "quick_profiles": admin_state.thermostat_quick_profiles,
+            "heating_groups": build_heating_control_view(admin_state),
         },
     )
 
@@ -582,6 +663,158 @@ def update_pdf_schedule(
         minute=minute,
     )
     return admin_redirect("Planification PDF mise a jour")
+
+
+@router.post("/pilotage-chauffage/profils")
+def create_quick_profile(
+    request: Request,
+    profile_id: str = Form(default=""),
+    profile_name: str = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    target_temperature_c: float = Form(...),
+    enabled: str | None = Form(default=None),
+) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    try:
+        add_or_update_quick_profile(
+            profile_id=profile_id,
+            profile_name=profile_name,
+            start_time=start_time,
+            end_time=end_time,
+            target_temperature_c=target_temperature_c,
+            enabled=enabled == "on",
+        )
+    except ValueError as exc:
+        return heating_control_redirect(str(exc))
+    return heating_control_redirect("Profil rapide enregistre")
+
+
+@router.post("/pilotage-chauffage/profils/delete")
+def delete_quick_profile(request: Request, profile_id: str = Form(...)) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    remove_quick_profile(profile_id)
+    return heating_control_redirect("Profil rapide supprime")
+
+
+@router.post("/pilotage-chauffage/plannings")
+async def create_heating_schedule(request: Request) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    form = await request.form()
+    trv_id = str(form.get("trv_id", "")).strip()
+    profile_id = str(form.get("profile_id", "")).strip()
+    start_time = str(form.get("start_time", "")).strip()
+    end_time = str(form.get("end_time", "")).strip()
+    try:
+        target_temperature_c = float(str(form.get("target_temperature_c", "20")).strip() or "20")
+        primary_weekday = int(str(form.get("weekday", "0")).strip() or "0")
+        copy_weekdays = [int(value) for value in form.getlist("copy_weekdays") if str(value).strip() != ""]
+    except ValueError:
+        return heating_control_redirect("Valeurs invalides dans le planning chauffage")
+    enabled = str(form.get("enabled", "")).strip() == "on"
+    weekdays = [primary_weekday, *copy_weekdays]
+    profile_name = ""
+    try:
+        if profile_id:
+            profile = build_schedule_payload_from_profile(profile_id)
+            start_time = profile.start_time
+            end_time = profile.end_time
+            target_temperature_c = profile.target_temperature_c
+            enabled = profile.enabled
+            profile_name = profile.profile_name
+        create_schedules_for_days(
+            trv_id=trv_id,
+            weekdays=weekdays,
+            start_time=start_time,
+            end_time=end_time,
+            target_temperature_c=target_temperature_c,
+            profile_name=profile_name,
+            enabled=enabled,
+        )
+    except ValueError as exc:
+        return heating_control_redirect(str(exc))
+    if len(set(weekdays)) > 1:
+        return heating_control_redirect("Creneaux dupliques sur plusieurs jours")
+    return heating_control_redirect("Creneau de chauffe enregistre")
+
+
+@router.post("/pilotage-chauffage/plannings/delete")
+def delete_heating_schedule(request: Request, schedule_id: str = Form(...)) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    remove_thermostat_schedule(schedule_id)
+    return heating_control_redirect("Creneau de chauffe supprime")
+
+
+@router.post("/pilotage-chauffage/override")
+def create_heating_override(
+    request: Request,
+    trv_id: str = Form(...),
+    target_temperature_c: float = Form(...),
+    duration_hours: int = Form(...),
+) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    try:
+        set_thermostat_override(
+            trv_id=trv_id,
+            target_temperature_c=target_temperature_c,
+            duration_hours=duration_hours,
+        )
+        apply_active_thermostat_controls(trv_filter=trv_id)
+    except ValueError as exc:
+        return heating_control_redirect(str(exc))
+    return heating_control_redirect("Override temporaire active")
+
+
+@router.post("/pilotage-chauffage/override/delete")
+def delete_heating_override(request: Request, trv_id: str = Form(...)) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    clear_thermostat_override(trv_id)
+    return heating_control_redirect("Override supprime")
+
+
+@router.post("/pilotage-chauffage/occupants/apply")
+def apply_occupant_planning_now(request: Request, owner_name: str = Form(...)) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    applied = apply_active_thermostat_controls(owner_filter=owner_name)
+    if not applied:
+        return heating_control_redirect("Aucune consigne active a appliquer pour cet occupant")
+    return heating_control_redirect(f"Consignes appliquees sur {len(applied)} tete(s)")
+
+
+@router.post("/pilotage-chauffage/occupants/hors-gel")
+def enable_occupant_hors_gel(request: Request, owner_name: str = Form(...)) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    try:
+        set_occupant_hors_gel(owner_name)
+        apply_active_thermostat_controls(owner_filter=owner_name)
+    except ValueError as exc:
+        return heating_control_redirect(str(exc))
+    return heating_control_redirect("Hors-gel actif pour cet occupant")
+
+
+@router.post("/pilotage-chauffage/occupants/hors-gel/delete")
+def disable_occupant_hors_gel(request: Request, owner_name: str = Form(...)) -> RedirectResponse:
+    redirect = ensure_admin(request)
+    if redirect:
+        return redirect
+    clear_occupant_overrides(owner_name)
+    return heating_control_redirect("Overrides occupant supprimes")
 
 
 @router.post("/admin/reports/generate")
