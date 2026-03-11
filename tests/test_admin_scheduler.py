@@ -109,8 +109,8 @@ def test_ecs_allocation_uses_index_delta_and_persists_result(tmp_path, monkeypat
     assert second.last_ecs_allocation.total_consumption_m3 == 3.5
     assert second.last_ecs_allocation.allocations[0].delta_m3 == 1.5
     assert second.last_ecs_allocation.allocations[1].delta_m3 == 2.0
-    assert second.last_ecs_allocation.allocations[0].allocated_amount == 30.0
-    assert second.last_ecs_allocation.allocations[1].allocated_amount == 40.0
+    assert second.last_ecs_allocation.allocations[0].allocated_amount == 21.0
+    assert second.last_ecs_allocation.allocations[1].allocated_amount == 28.0
     assert len(second.ecs_allocation_history) == 2
     assert second.ecs_allocation_history[0].period_label == "Avril 2026"
     assert second.ecs_allocation_history[1].period_label == "Mars 2026"
@@ -185,7 +185,7 @@ def test_combined_allocation_rows_merge_heating_and_ecs_owners() -> None:
     assert rows[0]["heating_share_percent"] == 62.5
     assert rows[0]["ecs_share_percent"] == 25.0
     assert rows[1]["heating_share_percent"] == 37.5
-    assert rows[0]["heating_component_amount"] == 31.25
-    assert rows[0]["ecs_component_amount"] == 12.5
-    assert rows[0]["combined_allocated_amount"] == 43.75
-    assert rows[1]["combined_allocated_amount"] == 56.25
+    assert rows[0]["heating_component_amount"] == 40.62
+    assert rows[0]["ecs_component_amount"] == 8.75
+    assert rows[0]["combined_allocated_amount"] == 49.37
+    assert rows[1]["combined_allocated_amount"] == 50.63

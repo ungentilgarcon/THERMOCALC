@@ -31,6 +31,33 @@
     <section class="table-card">
       <div class="section-heading">
         <div>
+          <p class="eyebrow">Ponderation facture</p>
+          <h2>Choix des poids chauffage / ECS</h2>
+        </div>
+      </div>
+      <div class="admin-list">
+        <article class="list-item">
+          <strong>Configuration active</strong>
+          <small>
+            Chauffage: {{ (config_defaults.billing_heating_weight * 100) | round(0) }}% ·
+            ECS: {{ (config_defaults.billing_ecs_weight * 100) | round(0) }}%
+          </small>
+          <small>
+            Pour une chaudiere fioul Buderus residentielle autour de 2012, un point de depart raisonnable est 65% chauffage / 35% ECS.
+          </small>
+          <small>
+            Monte la part chauffage vers 70% si le logement est peu isole ou en climat froid. Descends vers 60% si le logement est bien isole ou si l'ECS pese relativement lourd.
+          </small>
+          <small>
+            La configuration se modifie dans <code>thermocalc.config.toml</code>, section <code>[billing]</code>. Les sources et limites de cette estimation sont detaillees dans le document <code>docs/BILLING_WEIGHTS.md</code>.
+          </small>
+        </article>
+      </div>
+    </section>
+
+    <section class="table-card">
+      <div class="section-heading">
+        <div>
           <p class="eyebrow">Zigbee</p>
           <h2>Controleurs multi-bridge</h2>
         </div>

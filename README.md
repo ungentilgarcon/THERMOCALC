@@ -52,6 +52,7 @@ Une documentation detaillee est disponible dans `docs/`:
 - `docs/README.md` : point d'entree de la documentation
 - `docs/API.md` : endpoints HTML, JSON, PDF et actions admin
 - `docs/ARCHITECTURE.md` : architecture applicative et flux de donnees
+- `docs/BILLING_WEIGHTS.md` : justification et sources de la ponderation chauffage / ECS
 - `docs/EXPLOITATION.md` : installation, configuration et exploitation
 - `docs/TEST_CALCULS.md` : mode de simulation de scenarios de chauffe
 

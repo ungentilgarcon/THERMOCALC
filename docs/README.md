@@ -6,6 +6,7 @@ Cette documentation complete le README racine avec une vue exploitable par usage
 
 - [API.md](API.md) : endpoints HTML, JSON, PDF et operations d'administration
 - [ARCHITECTURE.md](ARCHITECTURE.md) : structure applicative et flux de donnees
+- [BILLING_WEIGHTS.md](BILLING_WEIGHTS.md) : justification et sources de la ponderation chauffage / ECS
 - [EXPLOITATION.md](EXPLOITATION.md) : installation, configuration, exploitation quotidienne
 - [TEST_CALCULS.md](TEST_CALCULS.md) : mode de simulation et validation fonctionnelle
 

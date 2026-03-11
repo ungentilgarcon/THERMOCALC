@@ -46,6 +46,7 @@ def test_admin_page_renders_after_login(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "Administration" in response.text
+    assert "Choix des poids chauffage / ECS" in response.text
 
 
 def test_archive_filters_match_expected_owner_and_month() -> None:

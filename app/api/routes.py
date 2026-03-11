@@ -8,6 +8,8 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from app.core.config import (
+    BILLING_ECS_WEIGHT,
+    BILLING_HEATING_WEIGHT,
     DEFAULT_AUTO_DISCOVERY_ENABLED,
     DEFAULT_DISCOVERY_INTERVAL_MINUTES,
     DEFAULT_PERMIT_JOIN_SECONDS,
@@ -183,6 +185,8 @@ def admin_page(
                 "auto_discovery_enabled": DEFAULT_AUTO_DISCOVERY_ENABLED,
                 "discovery_interval_minutes": DEFAULT_DISCOVERY_INTERVAL_MINUTES,
                 "permit_join_seconds": DEFAULT_PERMIT_JOIN_SECONDS,
+                "billing_heating_weight": BILLING_HEATING_WEIGHT,
+                "billing_ecs_weight": BILLING_ECS_WEIGHT,
             },
         },
     )
